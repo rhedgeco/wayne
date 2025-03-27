@@ -46,6 +46,7 @@ in
         clang
         lld
 
+        cargo-expand
         rust-analyzer
         weston
         just

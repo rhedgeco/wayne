@@ -1,0 +1,5 @@
+[workspace]
+members = ["wayne-core"]
+
+[workspace.dependencies]
+wayne-core = { path = "wayne-core" }

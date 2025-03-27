@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Read},
+    io::{self, Read, Write},
     os::unix::net::UnixStream,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -35,6 +35,15 @@ impl ClientStream {
 
     pub fn id(&self) -> ClientId {
         self.client_id
+    }
+
+    pub fn write(&mut self, message: &Message) -> io::Result<()> {
+        let size = (message.body.len() + 8) as u16;
+        self.stream.write_all(&message.object_id.to_ne_bytes())?;
+        self.stream.write_all(&message.opcode.to_ne_bytes())?;
+        self.stream.write_all(&size.to_ne_bytes())?;
+        self.stream.write_all(&message.body)?;
+        Ok(())
     }
 
     pub fn read(&mut self) -> io::Result<Option<Message>> {

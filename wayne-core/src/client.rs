@@ -6,17 +6,22 @@ use std::{
 
 use derive_more::Display;
 
-use crate::Message;
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub object_id: u32,
+    pub opcode: u16,
+    pub body: Box<[u8]>,
+}
 
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientId(u64);
 
-pub struct Client {
+pub struct ClientStream {
     client_id: ClientId,
     stream: UnixStream,
 }
 
-impl Client {
+impl ClientStream {
     pub fn new(stream: UnixStream) -> io::Result<Self> {
         stream.set_nonblocking(true)?;
         Ok(Self {
@@ -32,7 +37,7 @@ impl Client {
         self.client_id
     }
 
-    pub fn read_message(&mut self) -> io::Result<Option<Message>> {
+    pub fn read(&mut self) -> io::Result<Option<Message>> {
         // try to read the next message header
         let mut header = [0; 8];
         match self.stream.read_exact(&mut header) {

@@ -13,7 +13,7 @@ use std::{
 use fs2::FileExt;
 use thiserror::Error;
 
-use crate::Client;
+use crate::ClientStream;
 
 #[derive(Debug, Error)]
 pub enum TryBindError {
@@ -25,7 +25,7 @@ pub enum TryBindError {
     AlreadyInUse { start: usize, end: usize },
 }
 
-pub struct Server {
+pub struct WaylandSocket {
     listener: UnixListener,
     socket_path: PathBuf,
     socket_name: Option<OsString>,
@@ -35,8 +35,8 @@ pub struct Server {
 }
 
 #[bon::bon]
-impl Server {
-    #[builder(finish_fn = bind)]
+impl WaylandSocket {
+    #[builder(finish_fn = build)]
     pub fn try_bind(
         #[builder(start_fn)] start: usize,
         #[builder(name = until)] end: Option<usize>,
@@ -70,7 +70,7 @@ impl Server {
     }
 }
 
-impl Server {
+impl WaylandSocket {
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
     }
@@ -79,9 +79,9 @@ impl Server {
         self.socket_name.as_ref().map(|s| s.as_os_str())
     }
 
-    pub fn accept_client(&self) -> io::Result<Option<Client>> {
+    pub fn accept_client(&self) -> io::Result<Option<ClientStream>> {
         match self.listener.accept() {
-            Ok((stream, _)) => Ok(Some(Client::new(stream)?)),
+            Ok((stream, _)) => Ok(Some(ClientStream::new(stream)?)),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(None),
             Err(e) => Err(e),
         }
@@ -145,7 +145,7 @@ impl Server {
     }
 }
 
-impl Drop for Server {
+impl Drop for WaylandSocket {
     fn drop(&mut self) {
         // remove socket created at target path
         let _ = fs::remove_file(&self.socket_path);

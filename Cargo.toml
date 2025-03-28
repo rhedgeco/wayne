@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["wayne-core", "wayne-scanner"]
+members = ["wayne-core", "wayne-protocol", "wayne-scanner"]
 
 [workspace.dependencies]
 wayne-core = { path = "wayne-core" }
+wayne-scanner = { path = "wayne-scanner" }
+wayne-protocol = { path = "wayne-protocol" }

@@ -7,7 +7,10 @@ edition = "2024"
 proc-macro = true
 
 [dependencies]
-darling = "0.20.10"
 proc-macro2 = "1.0.94"
 quote = "1.0.39"
+quick-xml = "0.37.2"
 syn = "2.0.99"
+convert_case = "0.8.0"
+anyhow = "1.0.95"
+thiserror = "2.0.12"

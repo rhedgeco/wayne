@@ -1,5 +1,5 @@
 [package]
-name = "wayne-scanner"
+name = "wayne-macros"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,8 +9,11 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "1.0.94"
 quote = "1.0.39"
-quick-xml = "0.37.2"
+quick-xml = { version = "0.37.2", features = ["serialize", "overlapped-lists"] }
 syn = "2.0.99"
 convert_case = "0.8.0"
 anyhow = "1.0.95"
 thiserror = "2.0.12"
+serde = { version = "1.0.218", features = ["derive"] }
+fxhash = "0.2.1"
+serde_with = "3.12.0"

@@ -1,76 +1,108 @@
 use std::{
-    io::{self, Read, Write},
-    os::unix::net::UnixStream,
+    collections::VecDeque,
+    io::{self, IoSliceMut},
+    mem::MaybeUninit,
+    os::fd::OwnedFd,
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use derive_more::Display;
+use log::warn;
+use rustix::{
+    cmsg_space,
+    net::{self, RecvAncillaryBuffer, RecvFlags, Shutdown},
+};
 
-#[derive(Debug, Clone)]
-pub struct Message {
-    pub object_id: u32,
-    pub opcode: u16,
-    pub body: Box<[u8]>,
-}
+use crate::{Message, message::MessageBuilder, socket::SocketId};
 
+const DATA_SPACE: usize = 128;
+const FD_SPACE: usize = cmsg_space!(ScmRights(8));
+
+#[repr(transparent)]
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientId(u64);
 
-pub struct ClientStream {
+#[derive(Debug)]
+pub struct WaylandClient {
+    stream_fd: OwnedFd,
+    socket_id: SocketId,
     client_id: ClientId,
-    stream: UnixStream,
+    message_space: [u8; DATA_SPACE],
+    message_builder: MessageBuilder,
+    message_buffer: VecDeque<Message>,
+    fd_space: [MaybeUninit<u8>; FD_SPACE],
+    fd_buffer: VecDeque<OwnedFd>,
 }
 
-impl ClientStream {
-    pub fn new(stream: UnixStream) -> io::Result<Self> {
-        stream.set_nonblocking(true)?;
-        Ok(Self {
+impl Drop for WaylandClient {
+    fn drop(&mut self) {
+        let _ = net::shutdown(&self.stream_fd, Shutdown::Both);
+    }
+}
+
+impl WaylandClient {
+    pub(crate) fn new(stream_fd: OwnedFd, socket_id: SocketId) -> Self {
+        Self {
+            stream_fd,
+            socket_id,
             client_id: ClientId({
                 static GENERATOR: AtomicU64 = AtomicU64::new(0);
                 GENERATOR.fetch_add(1, Ordering::Relaxed)
             }),
-            stream,
-        })
+            message_space: [0; DATA_SPACE],
+            message_builder: MessageBuilder::new(),
+            message_buffer: VecDeque::new(),
+            fd_space: [MaybeUninit::uninit(); FD_SPACE],
+            fd_buffer: VecDeque::new(),
+        }
     }
 
     pub fn id(&self) -> ClientId {
         self.client_id
     }
 
-    pub fn write(&mut self, message: &Message) -> io::Result<()> {
-        let size = (message.body.len() + 8) as u16;
-        self.stream.write_all(&message.object_id.to_ne_bytes())?;
-        self.stream.write_all(&message.opcode.to_ne_bytes())?;
-        self.stream.write_all(&size.to_ne_bytes())?;
-        self.stream.write_all(&message.body)?;
-        Ok(())
+    pub fn socket_id(&self) -> SocketId {
+        self.socket_id
     }
 
-    pub fn read(&mut self) -> io::Result<Option<Message>> {
-        // try to read the next message header
-        let mut header = [0; 8];
-        match self.stream.read_exact(&mut header) {
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
-            Err(e) => return Err(e),
-            _ => (),
+    pub fn take_fd(&mut self) -> Option<OwnedFd> {
+        self.fd_buffer.pop_front()
+    }
+
+    pub fn take_message(&mut self) -> Option<Message> {
+        self.message_buffer.pop_front()
+    }
+
+    pub fn fill_buffers(&mut self) -> io::Result<()> {
+        let mut fd_buffer = RecvAncillaryBuffer::new(&mut self.fd_space);
+        let result = net::recvmsg(
+            &self.stream_fd,
+            &mut [IoSliceMut::new(&mut self.message_space)],
+            &mut fd_buffer,
+            RecvFlags::CMSG_CLOEXEC | RecvFlags::DONTWAIT,
+        );
+
+        for message in fd_buffer.drain() {
+            match message {
+                net::RecvAncillaryMessage::ScmRights(fds) => self.fd_buffer.extend(fds),
+                net::RecvAncillaryMessage::ScmCredentials(_) => {
+                    warn!("Received ScmCredentials from ancillary buffer");
+                }
+                _ => unreachable!(),
+            }
         }
 
-        // parse the header parts
-        let object_id = u32::from_ne_bytes([header[0], header[1], header[2], header[3]]);
-        let opcode = u16::from_ne_bytes([header[4], header[5]]);
-        let mut size = u16::from_ne_bytes([header[6], header[7]]).max(8) as usize;
-        size = (size + 3) & !3; // round the size to the nearest 32 bit value
-
-        // parse the message body
-        let remaining = size - 8;
-        let mut body = vec![0; remaining];
-        self.stream.read_exact(&mut body)?;
-
-        // build and return the message
-        Ok(Some(Message {
-            object_id,
-            opcode,
-            body: body.into_boxed_slice(),
-        }))
+        match result {
+            Err(e) => match e.kind() {
+                io::ErrorKind::WouldBlock => Ok(()),
+                _ => Err(e.into()),
+            },
+            Ok(msg) => {
+                let bytes = &self.message_space[0..msg.bytes];
+                let parser = self.message_builder.parse(bytes);
+                self.message_buffer.extend(parser);
+                Ok(())
+            }
+        }
     }
 }

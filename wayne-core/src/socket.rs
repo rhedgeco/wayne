@@ -1,52 +1,68 @@
 use std::{
     env::{self, VarError},
     ffi::{OsStr, OsString},
-    fs::{self, File},
     io,
-    os::unix::{
-        fs::{MetadataExt, OpenOptionsExt},
-        net::UnixListener,
-    },
+    os::fd::OwnedFd,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
-use fs2::FileExt;
+use log::error;
+use rustix::{
+    fs::{self, FlockOperation, Mode, OFlags},
+    net::{self, AddressFamily, Shutdown, SocketAddrUnix, SocketFlags, SocketType},
+};
 use thiserror::Error;
 
-use crate::ClientStream;
+use crate::WaylandClient;
 
 #[derive(Debug, Error)]
-pub enum TryBindError {
+pub enum BindError {
     #[error("Failed to bind socket: {_0}")]
     IOError(#[from] io::Error),
     #[error("Failed to get `XDG_RUNTIME_DIR`: {_0}")]
     VarError(#[from] VarError),
-    #[error("Failed to bind sockets ({start}-{end}): Already in use.")]
-    AlreadyInUse { start: usize, end: usize },
+    #[error("Failed to bind socket: Addr(s) already in use.")]
+    AlreadyInUse,
 }
 
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SocketId(u64);
+
+#[derive(Debug)]
 pub struct WaylandSocket {
-    listener: UnixListener,
-    socket_path: PathBuf,
     socket_name: Option<OsString>,
-    #[allow(dead_code)]
-    lock_file: File, // keep lock file alive
+    socket_path: PathBuf,
+    socket_fd: OwnedFd,
     lock_path: PathBuf,
+    #[allow(dead_code)]
+    lock_fd: OwnedFd,
+    id: SocketId,
+}
+
+impl Drop for WaylandSocket {
+    fn drop(&mut self) {
+        // try to shutdown and remove socket items on drop
+        let _ = net::shutdown(&self.socket_fd, Shutdown::Both);
+        let _ = std::fs::remove_file(&self.socket_path);
+        let _ = std::fs::remove_file(&self.lock_path);
+    }
 }
 
 #[bon::bon]
 impl WaylandSocket {
-    #[builder(finish_fn = build)]
-    pub fn try_bind(
-        #[builder(start_fn)] start: usize,
-        #[builder(name = until)] end: Option<usize>,
-    ) -> Result<Self, TryBindError> {
+    #[builder(finish_fn = bind)]
+    pub fn build(
+        #[builder(start_fn)] value: usize,
+        #[builder(name = try_until)] end: Option<usize>,
+    ) -> Result<Self, BindError> {
         // get the xdg runtime directory from the environment variable
         let runtime_dir: PathBuf = env::var("XDG_RUNTIME_DIR")?.into();
 
-        // try binding the socket to a range of values
-        let end = end.unwrap_or(start);
-        for address in start..=end {
+        // try binding the socket on the range of values
+        let end = end.unwrap_or(value);
+        for address in value..=end {
             let name = format!("wayland-{address}");
             let path = runtime_dir.join(format!("wayland-{address}"));
             match Self::bind_path(path) {
@@ -54,24 +70,30 @@ impl WaylandSocket {
                     socket.socket_name = Some(name.into());
                     return Ok(socket);
                 }
-                Err(err) => match err.kind() {
-                    // keep trying to bind to sockets if the error was one of the following
-                    // AddrInUse: A bind was attempted, but the socket was already bound elsewhere
-                    // WouldBlock: The lockfile could not be aquired, and would have blocked
-                    io::ErrorKind::AddrInUse | io::ErrorKind::WouldBlock => continue,
-                    // any other error is unexpected and should be returned
-                    _ => return Err(TryBindError::IOError(err)),
-                },
+                Err(err) => {
+                    println!("ERR: {err}");
+                    match err.kind() {
+                        // keep trying to bind to sockets if the error was one of the following
+                        // AddrInUse: A bind was attempted, but the socket was already bound elsewhere
+                        // WouldBlock: The lockfile could not be aquired, and would have blocked
+                        io::ErrorKind::AddrInUse | io::ErrorKind::WouldBlock => continue,
+                        // any other error is unexpected and should be returned
+                        _ => return Err(BindError::IOError(err)),
+                    }
+                }
             }
         }
 
-        // if no bind was successful, return an already in use error
-        Err(TryBindError::AlreadyInUse { start, end })
+        Err(BindError::AlreadyInUse)
     }
 }
 
 impl WaylandSocket {
-    pub fn socket_path(&self) -> &Path {
+    pub fn id(&self) -> SocketId {
+        self.id
+    }
+
+    pub fn path(&self) -> &Path {
         &self.socket_path
     }
 
@@ -79,76 +101,94 @@ impl WaylandSocket {
         self.socket_name.as_ref().map(|s| s.as_os_str())
     }
 
-    pub fn accept_client(&self) -> io::Result<Option<ClientStream>> {
-        match self.listener.accept() {
-            Ok((stream, _)) => Ok(Some(ClientStream::new(stream)?)),
+    pub fn accept(&self) -> io::Result<Option<WaylandClient>> {
+        match net::accept(&self.socket_fd) {
+            Ok(stream_fd) => Ok(Some(WaylandClient::new(stream_fd, self.id))),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(None),
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
-    pub fn bind_path(path: PathBuf) -> io::Result<Self> {
-        let lock_path = path.with_extension("lock");
+    pub fn bind_path(path: impl AsRef<Path> + Into<PathBuf>) -> io::Result<Self> {
+        // create the path for the socket lockfile
+        let lock_path = path.as_ref().with_extension("lock");
 
-        // USEFUL LOCKING CONDITION FROM:
-        // https://github.com/Smithay/wayland-rs/blob/a1cc0482b98595ec26b4744c7bfd9e525f81acb1/wayland-server/src/socket.rs#L72
-        // The locking code uses a loop to avoid an open()-flock() race condition, described in more
-        // detail in the comment below. The implementation roughtly follows the one from libbsd:
-        //
+        // aquire the lockfile
         // https://gitlab.freedesktop.org/libbsd/libbsd/-/blob/73b25a8f871b3a20f6ff76679358540f95d7dbfd/src/flopen.c#L71
-        let lock_file = loop {
-            // open and lock file
-            let lock_file = File::options()
-                .create(true)
-                .read(true)
-                .write(true)
-                .mode(0o660)
-                .open(&lock_path)?;
-            lock_file.try_lock_exclusive()?;
+        let lock_fd = loop {
+            // open the lockfile
+            let lock_fd = fs::open(
+                &lock_path,
+                OFlags::CREATE | OFlags::RDWR,
+                Mode::RUSR | Mode::WUSR | Mode::RGRP,
+            )?;
 
-            // Verify that the file we locked is the same as the file on disk. An unlucky unlink()
-            // from a different thread which happens right between our open() and flock() may
-            // result in us successfully locking a now-nonexistent file, with another thread locking
-            // the same-named but newly created lock file, then both threads will think they have
-            // exclusive access to the same socket. To prevent this, check that we locked the actual
-            // currently existing file.
-            let fd_meta = lock_file.metadata()?;
-            let disk_meta = match fs::metadata(&lock_path) {
-                Ok(disk_meta) => disk_meta,
-                Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                    // This can happen during the aforementioned race condition.
-                    continue;
-                }
-                Err(err) => return Err(err),
+            // lock the file in a non-blocking manner
+            fs::flock(&lock_fd, FlockOperation::NonBlockingLockExclusive)?;
+
+            // In rare cases, a race condition may occur.
+            // this can happen when the lockfile is removed/replaced after `open`, but before `flock`.
+            // In this instance, the file descriptor we have is different than the file on disk.
+            // To ensure the lock was aquired successfully, we need to check the metadata.
+            // If the descriptor and file metadata math, we can be sure that the lock was successful.
+
+            // get the metadata for the lockfile on disk
+            let Ok(fs_meta) = fs::stat(&lock_path) else {
+                // "disappeared from under our feet"
+                // https://gitlab.freedesktop.org/libbsd/libbsd/-/blob/73b25a8f871b3a20f6ff76679358540f95d7dbfd/src/flopen.c#L101
+                // when we cant get the meta data from the disk, the file must have been yanked.
+                // so just try to create or lock the file again.
+                continue;
             };
 
-            if fd_meta.dev() == disk_meta.dev() && fd_meta.ino() == disk_meta.ino() {
-                break lock_file;
+            // get the metadata for the file descriptor we have
+            let fd_meta = fs::fstat(&lock_fd)?;
+
+            // ensure both significant metadata sections match
+            if fs_meta.st_dev != fd_meta.st_dev || fs_meta.st_ino != fd_meta.st_ino {
+                // if they dont, then the file on disk was replaced before the lock happened
+                continue;
             }
+
+            // if all the above succeeded, then we have successfully locked the file
+            break lock_fd;
         };
 
-        // check if an old socket exists, and cleanup if relevant
-        if path.try_exists()? {
-            fs::remove_file(&path)?;
+        // create the socket path
+        let socket_path = path.into();
+        if socket_path.try_exists()? {
+            // delete any old leftover paths
+            // this expects the lockfile to be respected
+            fs::unlink(&socket_path)?;
         }
 
-        // create and build the socket
-        let listener = UnixListener::bind(&path)?;
-        listener.set_nonblocking(true)?;
-        Ok(Self {
-            listener,
-            socket_path: path,
-            socket_name: None,
-            lock_file,
-            lock_path,
-        })
-    }
-}
+        // build a unix socket to listen on
+        let socket_addr = SocketAddrUnix::new(&socket_path)?;
+        let socket_fd = net::socket_with(
+            AddressFamily::UNIX,
+            SocketType::STREAM,
+            SocketFlags::all(),
+            None,
+        )?;
 
-impl Drop for WaylandSocket {
-    fn drop(&mut self) {
-        // remove socket created at target path
-        let _ = fs::remove_file(&self.socket_path);
-        let _ = fs::remove_file(&self.lock_path);
+        // bind the socket to the path and listen for connections
+        net::bind(&socket_fd, &socket_addr)?;
+        net::listen(&socket_fd, 20)?;
+
+        // generate a unique socket id
+        let id = SocketId({
+            static GENERATOR: AtomicU64 = AtomicU64::new(0);
+            GENERATOR.fetch_add(1, Ordering::Relaxed)
+        });
+
+        // finally build the server and return
+        Ok(Self {
+            socket_name: None,
+            socket_path,
+            socket_fd,
+            lock_path,
+            lock_fd,
+            id,
+        })
     }
 }

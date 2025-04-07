@@ -16,12 +16,6 @@ enum ParseState {
     },
 }
 
-impl ParseState {
-    pub fn take(&mut self) -> Self {
-        core::mem::replace(self, Self::Empty)
-    }
-}
-
 #[derive(Debug)]
 pub struct MessageBuilder {
     state: ParseState,
@@ -34,20 +28,20 @@ impl MessageBuilder {
         }
     }
 
-    pub fn parse<'a: 'b, 'b>(&'a mut self, bytes: &'b [u8]) -> Parser<'b> {
-        Parser {
+    pub fn parse<'a: 'b, 'b>(&'a mut self, bytes: &'b [u8]) -> MessageParser<'b> {
+        MessageParser {
             state: &mut self.state,
             bytes,
         }
     }
 }
 
-pub struct Parser<'a> {
+pub struct MessageParser<'a> {
     state: &'a mut ParseState,
     bytes: &'a [u8],
 }
 
-impl<'a> Iterator for Parser<'a> {
+impl<'a> Iterator for MessageParser<'a> {
     type Item = Message;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -59,7 +53,7 @@ impl<'a> Iterator for Parser<'a> {
             }
 
             // then update the parse state
-            match self.state.take() {
+            match core::mem::replace(self.state, ParseState::Empty) {
                 ParseState::Empty => {
                     *self.state = ParseState::IncompleteHeader(Vec::with_capacity(8))
                 }

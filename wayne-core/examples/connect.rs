@@ -14,11 +14,6 @@ fn main() -> anyhow::Result<()> {
         )
         .spawn()?;
 
-    let data = &[1, 2, 3];
-    for item in &data[data.len()..] {
-        println!("{item}")
-    }
-
     let mut clients = Vec::new();
     loop {
         if let Some(client) = socket.accept()? {

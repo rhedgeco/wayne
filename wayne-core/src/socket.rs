@@ -71,7 +71,6 @@ impl WaylandSocket {
                     return Ok(socket);
                 }
                 Err(err) => {
-                    println!("ERR: {err}");
                     match err.kind() {
                         // keep trying to bind to sockets if the error was one of the following
                         // AddrInUse: A bind was attempted, but the socket was already bound elsewhere

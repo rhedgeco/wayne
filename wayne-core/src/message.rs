@@ -16,32 +16,37 @@ enum ParseState {
     },
 }
 
+/// Parses messages byte by byte.
+///
+/// When parsing, a message may be incomplete,
 #[derive(Debug)]
-pub struct MessageBuilder {
+pub struct MessageParser {
     state: ParseState,
 }
 
-impl MessageBuilder {
+impl MessageParser {
+    /// Returns a new empty message parser
     pub fn new() -> Self {
         Self {
             state: ParseState::Empty,
         }
     }
 
-    pub fn parse<'a: 'b, 'b>(&'a mut self, bytes: &'b [u8]) -> MessageParser<'b> {
-        MessageParser {
+    /// Builds a message stream that resumes parsing messages
+    pub fn parse<'a: 'b, 'b>(&'a mut self, bytes: &'b [u8]) -> MessageStream<'b> {
+        MessageStream {
             state: &mut self.state,
             bytes,
         }
     }
 }
 
-pub struct MessageParser<'a> {
+pub struct MessageStream<'a> {
     state: &'a mut ParseState,
     bytes: &'a [u8],
 }
 
-impl<'a> Iterator for MessageParser<'a> {
+impl<'a> Iterator for MessageStream<'a> {
     type Item = Message;
 
     fn next(&mut self) -> Option<Self::Item> {

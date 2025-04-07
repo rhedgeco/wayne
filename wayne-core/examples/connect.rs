@@ -22,8 +22,8 @@ fn main() -> anyhow::Result<()> {
         };
 
         for client in &mut clients {
-            client.fill_buffers()?;
-            while let Some(message) = client.take_message() {
+            client.receive_data()?;
+            while let Some(message) = client.pop_message() {
                 println!("{message:?}");
             }
         }

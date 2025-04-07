@@ -7,6 +7,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use derive_more::Display;
 use log::error;
 use rustix::{
     fs::{self, FlockOperation, Mode, OFlags},
@@ -14,7 +15,7 @@ use rustix::{
 };
 use thiserror::Error;
 
-use crate::WaylandClient;
+use crate::ClientStream;
 
 #[derive(Debug, Error)]
 pub enum BindError {
@@ -27,7 +28,7 @@ pub enum BindError {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SocketId(u64);
 
 #[derive(Debug)]
@@ -100,17 +101,18 @@ impl WaylandSocket {
         self.socket_name.as_ref().map(|s| s.as_os_str())
     }
 
-    pub fn accept(&self) -> io::Result<Option<WaylandClient>> {
+    pub fn accept(&self) -> io::Result<Option<ClientStream>> {
         match net::accept(&self.socket_fd) {
-            Ok(stream_fd) => Ok(Some(WaylandClient::new(stream_fd, self.id))),
+            Ok(stream_fd) => Ok(Some(ClientStream::new(stream_fd, self.id))),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
-    pub fn bind_path(path: impl AsRef<Path> + Into<PathBuf>) -> io::Result<Self> {
+    pub fn bind_path(path: impl Into<PathBuf>) -> io::Result<Self> {
         // create the path for the socket lockfile
-        let lock_path = path.as_ref().with_extension("lock");
+        let socket_path = path.into();
+        let lock_path = socket_path.with_extension("lock");
 
         // aquire the lockfile
         // https://gitlab.freedesktop.org/libbsd/libbsd/-/blob/73b25a8f871b3a20f6ff76679358540f95d7dbfd/src/flopen.c#L71
@@ -154,7 +156,6 @@ impl WaylandSocket {
         };
 
         // create the socket path
-        let socket_path = path.into();
         if socket_path.try_exists()? {
             // delete any old leftover paths
             // this expects the lockfile to be respected

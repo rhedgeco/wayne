@@ -7,20 +7,14 @@ use std::{
 };
 
 use derive_more::Display;
-use log::warn;
+use log::error;
 use rustix::{
     cmsg_space,
-    net::{self, RecvAncillaryBuffer, RecvFlags, Shutdown},
+    net::{self, RecvAncillaryBuffer, RecvFlags, ReturnFlags, Shutdown},
 };
+use thiserror::Error;
 
-use crate::{Message, message::MessageParser, socket::SocketId};
-
-/// Arbitrary constant for the receive size of the data buffer
-const DATA_SPACE: usize = 128;
-
-/// The theoretical maximum number of file descriptors that could appear in the data stream
-const MAX_FDS: usize = (DATA_SPACE / 8) + 1;
-const FD_SPACE: usize = cmsg_space!(ScmRights(MAX_FDS));
+use crate::{Message, message::MessageDecoder, socket::SocketId};
 
 #[repr(transparent)]
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -31,11 +25,7 @@ pub struct ClientStream {
     stream_fd: OwnedFd,
     socket_id: SocketId,
     client_id: ClientId,
-    message_space: [u8; DATA_SPACE],
-    message_builder: MessageParser,
-    message_buffer: VecDeque<Message>,
-    fd_space: [MaybeUninit<u8>; FD_SPACE],
-    fd_buffer: VecDeque<OwnedFd>,
+    message_builder: MessageDecoder,
 }
 
 impl Drop for ClientStream {
@@ -53,11 +43,7 @@ impl ClientStream {
                 static GENERATOR: AtomicU64 = AtomicU64::new(0);
                 GENERATOR.fetch_add(1, Ordering::Relaxed)
             }),
-            message_space: [0; DATA_SPACE],
-            message_builder: MessageParser::new(),
-            message_buffer: VecDeque::new(),
-            fd_space: [MaybeUninit::uninit(); FD_SPACE],
-            fd_buffer: VecDeque::new(),
+            message_builder: MessageDecoder::new(),
         }
     }
 
@@ -71,49 +57,83 @@ impl ClientStream {
         self.socket_id
     }
 
-    /// Pops the next file descriptor from the receive queue.
-    pub fn pop_fd(&mut self) -> Option<OwnedFd> {
-        self.fd_buffer.pop_front()
-    }
-
-    /// Pops the next message from the receive queue.
-    pub fn pop_message(&mut self) -> Option<Message> {
-        self.message_buffer.pop_front()
-    }
-
-    /// Reads bytes from the client stream an updates internal buffers.
+    /// Reads bytes from the client stream into the `buffer`.
     ///
-    /// Returns `true` if data was received, otherwise returns false.
-    pub fn receive_data(&mut self) -> io::Result<bool> {
-        let mut fd_buffer = RecvAncillaryBuffer::new(&mut self.fd_space);
-        let received = match net::recvmsg(
-            &self.stream_fd,
-            &mut [IoSliceMut::new(&mut self.message_space)],
-            &mut fd_buffer,
-            RecvFlags::CMSG_CLOEXEC | RecvFlags::DONTWAIT,
-        ) {
-            Ok(msg) => msg.bytes,
+    /// Returns `true` if any data was received, otherwise returns false.
+    pub fn receive(&mut self, buffer: &mut RecvBuffer) -> Result<bool, RecvError> {
+        // receive data from the socket stream
+        let data_buffer = &mut [IoSliceMut::new(&mut buffer.data_space)];
+        let fd_buffer = &mut RecvAncillaryBuffer::new(&mut buffer.control_space);
+        let flags = RecvFlags::CMSG_CLOEXEC | RecvFlags::DONTWAIT;
+        let recv_msg = match net::recvmsg(&self.stream_fd, data_buffer, fd_buffer, flags) {
+            Ok(recv_msg) => recv_msg,
             Err(e) => {
                 return match e.kind() {
                     io::ErrorKind::WouldBlock => Ok(false),
-                    _ => Err(e.into()),
+                    _ => Err(RecvError::IoError(e.into())),
                 };
             }
         };
 
+        // drain all file descriptors
         for message in fd_buffer.drain() {
             match message {
-                net::RecvAncillaryMessage::ScmRights(fds) => self.fd_buffer.extend(fds),
+                net::RecvAncillaryMessage::ScmRights(fds) => buffer.fds.extend(fds),
                 net::RecvAncillaryMessage::ScmCredentials(_) => {
-                    warn!("Received ScmCredentials from ancillary buffer");
+                    error!("Received ScmCredentials from ancillary buffer");
+                    return Err(RecvError::InvalidControl);
                 }
                 _ => unreachable!(),
             }
         }
 
-        let bytes = &self.message_space[0..received];
-        let parser = self.message_builder.parse(bytes);
-        self.message_buffer.extend(parser);
+        // parse all available messages
+        let bytes = &buffer.data_space[0..recv_msg.bytes];
+        let messages = self.message_builder.decode(bytes);
+        buffer.messages.extend(messages);
+
+        // return an error if any control data was truncated
+        if recv_msg.flags.contains(ReturnFlags::CTRUNC) {
+            return Err(RecvError::TruncatedControl);
+        }
+
+        // otherwise return true
         Ok(true)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum RecvError {
+    #[error("An invalid control message came over the wire")]
+    InvalidControl,
+    #[error("A control message was truncated. Potential file descriptors were lost")]
+    TruncatedControl,
+    #[error("Failed to receive data: {_0}")]
+    IoError(#[from] io::Error),
+}
+
+pub struct RecvBuffer {
+    data_space: Box<[u8]>,
+    control_space: Box<[MaybeUninit<u8>]>,
+    messages: VecDeque<Message>,
+    fds: VecDeque<OwnedFd>,
+}
+
+impl RecvBuffer {
+    pub fn with_space(data_space: usize, fd_space: usize) -> Self {
+        Self {
+            data_space: vec![0; data_space].into_boxed_slice(),
+            control_space: Box::new_uninit_slice(cmsg_space!(ScmRights(fd_space))),
+            messages: VecDeque::new(),
+            fds: VecDeque::new(),
+        }
+    }
+
+    pub fn pop_fd(&mut self) -> Option<OwnedFd> {
+        self.fds.pop_front()
+    }
+
+    pub fn pop_message(&mut self) -> Option<Message> {
+        self.messages.pop_front()
     }
 }

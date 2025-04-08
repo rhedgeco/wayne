@@ -20,11 +20,11 @@ enum ParseState {
 ///
 /// When parsing, a message may be incomplete,
 #[derive(Debug)]
-pub struct MessageParser {
+pub struct MessageDecoder {
     state: ParseState,
 }
 
-impl MessageParser {
+impl MessageDecoder {
     /// Returns a new empty message parser
     pub fn new() -> Self {
         Self {
@@ -32,8 +32,8 @@ impl MessageParser {
         }
     }
 
-    /// Builds a message stream that resumes parsing messages
-    pub fn parse<'a: 'b, 'b>(&'a mut self, bytes: &'b [u8]) -> MessageStream<'b> {
+    /// Builds a message stream that resumes decoding messages
+    pub fn decode<'a: 'b, 'b>(&'a mut self, bytes: &'b [u8]) -> MessageStream<'b> {
         MessageStream {
             state: &mut self.state,
             bytes,
@@ -79,9 +79,10 @@ impl<'a> Iterator for MessageStream<'a> {
                     }
 
                     // create the header values
-                    let object_id = u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-                    let opcode = u16::from_ne_bytes([bytes[4], bytes[5]]);
-                    let size = u16::from_ne_bytes([bytes[6], bytes[7]]).max(8) as usize;
+                    let object_id =
+                        u32::from_ne_bytes([header[0], header[1], header[2], header[3]]);
+                    let opcode = u16::from_ne_bytes([header[4], header[5]]);
+                    let size = u16::from_ne_bytes([header[6], header[7]]).max(8) as usize;
                     let size = (size + 3) & !3; //  round the size to the nearest 32 bit multiple
                     let body = Vec::with_capacity(size - 8);
 

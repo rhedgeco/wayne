@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use wayne_core::WaylandSocket;
+use wayne_core::{WaylandSocket, client::RecvBuffer};
 
 fn main() -> anyhow::Result<()> {
     let socket = WaylandSocket::build(0).try_until(32).bind()?;
@@ -14,6 +14,7 @@ fn main() -> anyhow::Result<()> {
         )
         .spawn()?;
 
+    let mut buffer = RecvBuffer::with_space(8, 4);
     let mut clients = Vec::new();
     loop {
         if let Some(client) = socket.accept()? {
@@ -22,8 +23,8 @@ fn main() -> anyhow::Result<()> {
         };
 
         for client in &mut clients {
-            client.receive_data()?;
-            while let Some(message) = client.pop_message() {
+            while client.receive(&mut buffer)? {}
+            while let Some(message) = buffer.pop_message() {
                 println!("{message:?}");
             }
         }

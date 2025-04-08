@@ -27,10 +27,12 @@ pub enum BindError {
     AlreadyInUse,
 }
 
+/// A unique id that represents a single [`WaylandSocket`]
 #[repr(transparent)]
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SocketId(u64);
 
+/// A wayland socket connection that can be used to accept and build new [`ClientStream`]s.
 #[derive(Debug)]
 pub struct WaylandSocket {
     socket_name: Option<OsString>,

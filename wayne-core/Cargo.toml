@@ -2,6 +2,10 @@
 name = "wayne-core"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "the core foundation structures for wayne"
+repository = "https://github.com/rhedgeco/wayne"
+readme = "README.md"
 
 [dependencies]
 bon = "3.3.2"

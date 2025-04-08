@@ -14,18 +14,22 @@ use rustix::{
 };
 use thiserror::Error;
 
-use crate::{Message, message::MessageDecoder, socket::SocketId};
+use crate::{Message, message::MessageParser, socket::SocketId};
 
+/// A unique id that represents a single wayland [`ClientStream`]
 #[repr(transparent)]
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientId(u64);
 
+/// A client stream connection to a wayland socket.
+///
+/// This provides functions to send and receive [`Message`] data to and from the client.
 #[derive(Debug)]
 pub struct ClientStream {
     stream_fd: OwnedFd,
     socket_id: SocketId,
     client_id: ClientId,
-    message_builder: MessageDecoder,
+    message_builder: MessageParser,
 }
 
 impl Drop for ClientStream {
@@ -43,7 +47,7 @@ impl ClientStream {
                 static GENERATOR: AtomicU64 = AtomicU64::new(0);
                 GENERATOR.fetch_add(1, Ordering::Relaxed)
             }),
-            message_builder: MessageDecoder::new(),
+            message_builder: MessageParser::new(),
         }
     }
 
@@ -89,7 +93,7 @@ impl ClientStream {
 
         // parse all available messages
         let bytes = &buffer.data_space[0..recv_msg.bytes];
-        let messages = self.message_builder.decode(bytes);
+        let messages = self.message_builder.parse(bytes);
         buffer.messages.extend(messages);
 
         // return an error if any control data was truncated
@@ -112,6 +116,7 @@ pub enum RecvError {
     IoError(#[from] io::Error),
 }
 
+/// A buffer that can be used to receive data from a [`ClientStream`]
 pub struct RecvBuffer {
     data_space: Box<[u8]>,
     control_space: Box<[MaybeUninit<u8>]>,

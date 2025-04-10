@@ -16,3 +16,4 @@ rustix = { version = "1.0.1", features = ["net", "fs"] }
 
 [dev-dependencies]
 anyhow = "1.0.95"
+constcat = "0.6.0"

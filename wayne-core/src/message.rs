@@ -129,3 +129,65 @@ impl<'a> Iterator for MessageStream<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use constcat::concat_bytes;
+
+    use super::*;
+
+    #[test]
+    fn parse_small_chunks() {
+        const OBJECT_ID: u32 = 10;
+        const OPCODE: u16 = 12;
+        const BODY: &[u8] = &[3, 4, 5, 6];
+        const BYTES: &[u8] = concat_bytes!(
+            &OBJECT_ID.to_ne_bytes(),
+            &OPCODE.to_ne_bytes(),
+            &12u16.to_ne_bytes(),
+            BODY
+        );
+
+        // iterate in 4 byte chunks
+        let mut message_count = 0;
+        let mut parser = MessageParser::new();
+        for bytes in BYTES.chunks(4) {
+            for message in parser.parse(bytes) {
+                message_count += 1;
+                assert_eq!(&message.object_id, &OBJECT_ID);
+                assert_eq!(&message.opcode, &OPCODE);
+                assert_eq!(&*message.body, BODY);
+            }
+        }
+
+        assert_eq!(message_count, 1);
+    }
+
+    #[test]
+    fn parse_large_chunks() {
+        const OBJECT_ID: u32 = 10;
+        const OPCODE: u16 = 12;
+        const BODY: &[u8] = &[3, 4, 5, 6];
+        const BYTES: &[u8] = concat_bytes!(
+            &OBJECT_ID.to_ne_bytes(),
+            &OPCODE.to_ne_bytes(),
+            &12u16.to_ne_bytes(),
+            BODY
+        );
+        const MANY_BYTES: &[u8] = concat_bytes!(BYTES, BYTES, BYTES, BYTES, BYTES, BYTES);
+
+        // iterate in 30 byte chunks
+        let mut message_count = 0;
+        let mut parser = MessageParser::new();
+        for bytes in MANY_BYTES.chunks(30) {
+            for message in parser.parse(bytes) {
+                message_count += 1;
+                assert_eq!(&message.object_id, &OBJECT_ID);
+                assert_eq!(&message.opcode, &OPCODE);
+                assert_eq!(&*message.body, BODY);
+            }
+        }
+
+        assert_eq!(message_count, 6);
+    }
+}

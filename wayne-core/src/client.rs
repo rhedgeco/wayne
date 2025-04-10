@@ -128,8 +128,10 @@ impl Default for RecvBuffer {
 
 impl RecvBuffer {
     pub fn new() -> Self {
-        // set reasonably large buffer sizes by default
-        Self::with_space(4096, 2048)
+        // use a data buffer size that is not too large
+        // but a fd buffer size that is reasonably large
+        // missed file descriptors cannot be recovered
+        Self::with_space(64, 2048)
     }
 
     pub fn with_space(data_space: usize, fd_space: usize) -> Self {

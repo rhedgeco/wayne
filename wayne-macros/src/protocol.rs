@@ -1,4 +1,4 @@
-use std::{env, fs::File, io::BufReader, path::PathBuf};
+use std::{env, fs::File, io::BufReader, path::PathBuf, str::Lines};
 
 use convert_case::{Case, Casing};
 use proc_macro2::{Span, TokenStream};
@@ -54,8 +54,8 @@ pub struct Description {
 }
 
 impl Description {
-    pub fn doc_text(&self) -> &str {
-        self.text.as_ref().unwrap_or(&self.summary)
+    pub fn doc_lines(&self) -> Lines {
+        self.text.as_ref().unwrap_or(&self.summary).lines()
     }
 }
 
@@ -76,13 +76,19 @@ pub struct Interface {
 
 impl ToTokens for Interface {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let docs = self.description.doc_text();
         let ident = Ident::new(&self.name, Span::call_site());
         let requests = &self.requests;
         let events = &self.events;
         let enums = &self.enums;
+
+        let docs = self.description.doc_lines().map(|doc| {
+            let doc = doc.trim();
+            quote! {
+                #[doc = #doc]
+            }
+        });
         tokens.extend(quote! {
-            #[doc = #docs]
+            #(#docs)*
             pub mod #ident {
                 #(#requests)*
                 #(#events)*
@@ -103,12 +109,18 @@ pub struct Request {
 
 impl ToTokens for Request {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let docs = self.description.doc_text();
         let request_name = format!("{}Request", self.name.to_case(Case::Pascal));
         let request_ident = Ident::new(&request_name, Span::call_site());
         let args = &self.args;
+
+        let docs = self.description.doc_lines().map(|doc| {
+            let doc = doc.trim();
+            quote! {
+                #[doc = #doc]
+            }
+        });
         tokens.extend(quote! {
-            #[doc = #docs]
+            #(#docs)*
             pub struct #request_ident {
                 #(#args,)*
             }
@@ -181,12 +193,18 @@ pub struct Event {
 
 impl ToTokens for Event {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let docs = self.description.doc_text();
         let event_name = format!("{}Event", self.name.to_case(Case::Pascal));
         let event_ident = Ident::new(&event_name, Span::call_site());
         let args = &self.args;
+
+        let docs = self.description.doc_lines().map(|doc| {
+            let doc = doc.trim();
+            quote! {
+                #[doc = #doc]
+            }
+        });
         tokens.extend(quote! {
-            #[doc = #docs]
+            #(#docs)*
             pub struct #event_ident {
                 #(#args,)*
             }
@@ -206,11 +224,17 @@ pub struct Enum {
 
 impl ToTokens for Enum {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let docs = self.description.doc_text();
         let enum_ident = Ident::new(&self.name.to_case(Case::Pascal), Span::call_site());
         let entries = &self.entries;
+
+        let docs = self.description.doc_lines().map(|doc| {
+            let doc = doc.trim();
+            quote! {
+                #[doc = #doc]
+            }
+        });
         tokens.extend(quote! {
-            #[doc = #docs]
+            #(#docs)*
             #[repr(u32)]
             pub enum #enum_ident {
                 #(#entries,)*

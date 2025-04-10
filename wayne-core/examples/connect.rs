@@ -14,7 +14,7 @@ fn main() -> anyhow::Result<()> {
         )
         .spawn()?;
 
-    let mut buffer = RecvBuffer::with_space(8, 4);
+    let mut buffer = RecvBuffer::new();
     let mut clients = Vec::new();
     loop {
         if let Some(client) = socket.accept()? {

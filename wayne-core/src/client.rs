@@ -8,10 +8,7 @@ use std::{
 
 use derive_more::Display;
 use log::error;
-use rustix::{
-    cmsg_space,
-    net::{self, RecvAncillaryBuffer, RecvFlags, ReturnFlags, Shutdown},
-};
+use rustix::net::{self, RecvAncillaryBuffer, RecvFlags, ReturnFlags, Shutdown};
 use thiserror::Error;
 
 use crate::{Message, message::MessageParser, socket::SocketId};
@@ -124,11 +121,22 @@ pub struct RecvBuffer {
     fds: VecDeque<OwnedFd>,
 }
 
+impl Default for RecvBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RecvBuffer {
+    pub fn new() -> Self {
+        // set reasonably large buffer sizes by default
+        Self::with_space(4096, 2048)
+    }
+
     pub fn with_space(data_space: usize, fd_space: usize) -> Self {
         Self {
             data_space: vec![0; data_space].into_boxed_slice(),
-            control_space: Box::new_uninit_slice(cmsg_space!(ScmRights(fd_space))),
+            control_space: Box::new_uninit_slice(fd_space),
             messages: VecDeque::new(),
             fds: VecDeque::new(),
         }

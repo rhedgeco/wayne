@@ -2,14 +2,13 @@ use std::{
     collections::VecDeque,
     io::{self, IoSliceMut},
     mem::MaybeUninit,
-    os::fd::OwnedFd,
+    os::fd::{AsFd, BorrowedFd, OwnedFd},
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use derive_more::Display;
-use log::error;
+use log::warn;
 use rustix::net::{self, RecvAncillaryBuffer, RecvFlags, ReturnFlags, Shutdown};
-use thiserror::Error;
 
 use crate::{Message, message::MessageParser, socket::SocketId};
 
@@ -61,7 +60,7 @@ impl ClientStream {
     /// Reads bytes from the client stream into the `buffer`.
     ///
     /// Returns `true` if any data was received, otherwise returns false.
-    pub fn receive(&mut self, buffer: &mut RecvBuffer) -> Result<bool, RecvError> {
+    pub fn receive(&mut self, buffer: &mut RecvBuffer) -> io::Result<bool> {
         // receive data from the socket stream
         let data_buffer = &mut [IoSliceMut::new(&mut buffer.data_space)];
         let fd_buffer = &mut RecvAncillaryBuffer::new(&mut buffer.control_space);
@@ -71,18 +70,22 @@ impl ClientStream {
             Err(e) => {
                 return match e.kind() {
                     io::ErrorKind::WouldBlock => Ok(false),
-                    _ => Err(RecvError::IoError(e.into())),
+                    _ => Err(e.into()),
                 };
             }
         };
+
+        // immediately return an error if any control data was truncated
+        if recv_msg.flags.contains(ReturnFlags::CTRUNC) {
+            return Err(io::Error::other("truncated file descriptors"));
+        }
 
         // drain all file descriptors
         for message in fd_buffer.drain() {
             match message {
                 net::RecvAncillaryMessage::ScmRights(fds) => buffer.fds.extend(fds),
                 net::RecvAncillaryMessage::ScmCredentials(_) => {
-                    error!("Received ScmCredentials from ancillary buffer");
-                    return Err(RecvError::InvalidControl);
+                    warn!("Received ScmCredentials from ancillary buffer");
                 }
                 _ => unreachable!(),
             }
@@ -92,27 +95,13 @@ impl ClientStream {
         let bytes = &buffer.data_space[0..recv_msg.bytes];
         buffer.messages.extend(self.parser.parse(bytes));
 
-        // return an error if any control data was truncated
-        if recv_msg.flags.contains(ReturnFlags::CTRUNC) {
-            return Err(RecvError::TruncatedControl);
-        }
-
         // otherwise return true
         Ok(true)
     }
 }
 
-#[derive(Debug, Error)]
-pub enum RecvError {
-    #[error("An invalid control message came over the wire")]
-    InvalidControl,
-    #[error("A control message was truncated. Potential file descriptors were lost")]
-    TruncatedControl,
-    #[error("Failed to receive data: {_0}")]
-    IoError(#[from] io::Error),
-}
-
-/// A buffer that can be used to receive data from a [`ClientStream`]
+/// A buffer that can be used to receive message data from a [`ClientStream`]
+#[derive(Debug)]
 pub struct RecvBuffer {
     data_space: Box<[u8]>,
     control_space: Box<[MaybeUninit<u8>]>,
@@ -127,13 +116,25 @@ impl Default for RecvBuffer {
 }
 
 impl RecvBuffer {
+    /// Default byte space used for incoming message data.
+    const DEFAULT_DATA_SPACE: usize = 64;
+
+    /// Default byte space used for incoming file descriptors.
+    ///
+    /// The space must be sufficiently large.
+    /// Any missed file descriptors are a hard error for the protocol.
+    const DEFAULT_FD_SPACE: usize = 4096;
+
+    /// Returns a new buffer with default space allocated.
     pub fn new() -> Self {
-        // use a data buffer size that is not too large
-        // but a fd buffer size that is reasonably large
-        // missed file descriptors cannot be recovered
-        Self::with_space(64, 2048)
+        Self::with_space(Self::DEFAULT_DATA_SPACE, Self::DEFAULT_FD_SPACE)
     }
 
+    /// Returns a new buffer with a custom amount of space allocated.
+    ///
+    /// ## Warning
+    /// Be sure to set `fd_space` to a reasonable size for incoming data.
+    /// Any missed file descriptors are a hard error for the protocol.
     pub fn with_space(data_space: usize, fd_space: usize) -> Self {
         Self {
             data_space: vec![0; data_space].into_boxed_slice(),
@@ -143,11 +144,23 @@ impl RecvBuffer {
         }
     }
 
+    /// Pop and return the next file descriptor in the queue
     pub fn pop_fd(&mut self) -> Option<OwnedFd> {
         self.fds.pop_front()
     }
 
+    /// Pop and return the next message in the queue
     pub fn pop_message(&mut self) -> Option<Message> {
         self.messages.pop_front()
+    }
+
+    /// Peek the next file descriptor in the queue
+    pub fn peek_fd(&self) -> Option<BorrowedFd> {
+        self.fds.front().map(AsFd::as_fd)
+    }
+
+    /// Peek the next message in the queue
+    pub fn peek_message(&self) -> Option<&Message> {
+        self.messages.front()
     }
 }

@@ -4,18 +4,14 @@ use std::{
     io,
     os::fd::OwnedFd,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
-use derive_more::Display;
 use log::error;
 use rustix::{
     fs::{self, FlockOperation, Mode, OFlags},
     net::{self, AddressFamily, Shutdown, SocketAddrUnix, SocketFlags, SocketType},
 };
 use thiserror::Error;
-
-use crate::ClientStream;
 
 #[derive(Debug, Error)]
 pub enum BindError {
@@ -27,12 +23,7 @@ pub enum BindError {
     AlreadyInUse,
 }
 
-/// A unique id that represents a single [`WaylandSocket`]
-#[repr(transparent)]
-#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SocketId(u64);
-
-/// A wayland socket connection that can be used to accept and build new [`ClientStream`]s.
+/// A Wayland socket connection.
 #[derive(Debug)]
 pub struct WaylandSocket {
     socket_name: Option<OsString>,
@@ -41,7 +32,6 @@ pub struct WaylandSocket {
     lock_path: PathBuf,
     #[allow(dead_code)]
     lock_fd: OwnedFd,
-    id: SocketId,
 }
 
 impl Drop for WaylandSocket {
@@ -55,10 +45,16 @@ impl Drop for WaylandSocket {
 
 #[bon::bon]
 impl WaylandSocket {
+    /// Creates a builder that trys to bind to socket.
+    ///
+    /// The standard wayland socket pattern is as follows:
+    /// `{XDG_RUNTIME_DIR}/wayland-{value}`
     #[builder(finish_fn = bind)]
     pub fn build(
         #[builder(start_fn)] value: usize,
-        #[builder(name = try_until)] end: Option<usize>,
+        /// Informs the socket builder that it should keep trying to bind incrementally until it reaches `end`
+        #[builder(name = try_until)]
+        end: Option<usize>,
     ) -> Result<Self, BindError> {
         // get the xdg runtime directory from the environment variable
         let runtime_dir: PathBuf = env::var("XDG_RUNTIME_DIR")?.into();
@@ -91,26 +87,34 @@ impl WaylandSocket {
 }
 
 impl WaylandSocket {
-    pub fn id(&self) -> SocketId {
-        self.id
-    }
+    /// Connection limit for the socket backlog
+    /// https://beej.us/guide/bgnet/html/split/system-calls-or-bust.html#listen
+    const BACKLOG: i32 = 20;
 
+    /// Returns the file path that this socket was bound to
     pub fn path(&self) -> &Path {
         &self.socket_path
     }
 
+    /// Returns the name of the wayland socket.
+    ///
+    /// Returns `None` if the socket was created manually with [`bind_path`](Self::bind_path).
     pub fn socket_name(&self) -> Option<&OsStr> {
         self.socket_name.as_ref().map(|s| s.as_os_str())
     }
 
-    pub fn accept(&self) -> io::Result<Option<ClientStream>> {
+    /// Accepts a pending socket connection, returning the [`OwnedFd`] for the connection.
+    ///
+    /// Returns `None` if there are no pending socket connections.
+    pub fn accept(&self) -> io::Result<Option<OwnedFd>> {
         match net::accept(&self.socket_fd) {
-            Ok(stream_fd) => Ok(Some(ClientStream::new(stream_fd, self.id))),
+            Ok(stream_fd) => Ok(Some(stream_fd)),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
+    /// Manually builds a wayland socket and binds it to a specific `path`.
     pub fn bind_path(path: impl Into<PathBuf>) -> io::Result<Self> {
         // create the path for the socket lockfile
         let socket_path = path.into();
@@ -175,13 +179,7 @@ impl WaylandSocket {
 
         // bind the socket to the path and listen for connections
         net::bind(&socket_fd, &socket_addr)?;
-        net::listen(&socket_fd, 20)?;
-
-        // generate a unique socket id
-        let id = SocketId({
-            static GENERATOR: AtomicU64 = AtomicU64::new(0);
-            GENERATOR.fetch_add(1, Ordering::Relaxed)
-        });
+        net::listen(&socket_fd, Self::BACKLOG)?;
 
         // finally build the server and return
         Ok(Self {
@@ -190,7 +188,6 @@ impl WaylandSocket {
             socket_fd,
             lock_path,
             lock_fd,
-            id,
         })
     }
 }

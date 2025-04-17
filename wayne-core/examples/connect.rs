@@ -1,6 +1,6 @@
 use std::{env, io, os::unix::prelude::OwnedFd, path::PathBuf, process::Command};
 
-use wayne_core::{Message, WaylandListener, listener::MessageRecv};
+use wayne_core::{Message, WaylandListener, stream::MessageRecv};
 
 struct Receiver;
 impl MessageRecv for Receiver {

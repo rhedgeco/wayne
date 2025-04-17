@@ -1,6 +1,6 @@
 use std::{env, io, os::unix::prelude::OwnedFd, path::PathBuf, process::Command};
 
-use wayne_core::{Message, WaylandSocket, socket::MessageRecv};
+use wayne_core::{Message, WaylandListener, listener::MessageRecv};
 
 struct Receiver;
 impl MessageRecv for Receiver {
@@ -18,15 +18,15 @@ fn main() -> anyhow::Result<()> {
     let xdg_dir: PathBuf = env::var("XDG_RUNTIME_DIR")?.into();
 
     // build a socket on the first available socket name
-    let mut socket = None;
+    let mut listener = None;
     let mut sock_name = String::new();
     for index in 0..=32 {
         sock_name = format!("wayland-{index}");
         println!("Trying to bind to socket '{sock_name}'...");
-        match WaylandSocket::bind(xdg_dir.join(&sock_name)) {
+        match WaylandListener::bind(xdg_dir.join(&sock_name)) {
             Ok(new_sock) => {
                 println!("Success!");
-                socket = Some(new_sock);
+                listener = Some(new_sock);
                 break;
             }
             Err(e) => match e.kind() {
@@ -37,7 +37,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // try to get the bound socket
-    let Some(socket) = socket else {
+    let Some(listener) = listener else {
         eprintln!("Failed to bind socket. No sockets in range 0-32");
         return Ok(());
     };
@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     let mut control_buffer = vec![0u8; 4096];
     loop {
         // accept all pending clients
-        if let Some(stream) = socket.accept()? {
+        if let Some(stream) = listener.accept()? {
             println!("Client Connected");
             clients.push(stream);
         };

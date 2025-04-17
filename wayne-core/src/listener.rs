@@ -11,7 +11,7 @@ use std::{
 
 use crate::{Buffer, Message, message::MessageParser};
 
-pub struct WaylandSocket {
+pub struct WaylandListener {
     sock_path: CString,
     lock_path: CString,
     sock_fd: OwnedFd,
@@ -19,7 +19,7 @@ pub struct WaylandSocket {
     lock_fd: OwnedFd,
 }
 
-impl Drop for WaylandSocket {
+impl Drop for WaylandListener {
     fn drop(&mut self) {
         // shutdown the socket
         unsafe { libc::shutdown(self.sock_fd.as_raw_fd(), libc::SHUT_RDWR) };
@@ -30,7 +30,7 @@ impl Drop for WaylandSocket {
     }
 }
 
-impl WaylandSocket {
+impl WaylandListener {
     pub fn accept(&self) -> io::Result<Option<ClientStream>> {
         // accept a new stream
         let stream_fd = unsafe {

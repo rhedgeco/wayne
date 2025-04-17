@@ -12,22 +12,9 @@ use std::{
 use crate::{Buffer, Message, message::MessageParser};
 
 pub struct WaylandListener {
-    sock_path: CString,
-    lock_path: CString,
     sock_fd: OwnedFd,
     #[allow(dead_code)]
     lock_fd: OwnedFd,
-}
-
-impl Drop for WaylandListener {
-    fn drop(&mut self) {
-        // shutdown the socket
-        unsafe { libc::shutdown(self.sock_fd.as_raw_fd(), libc::SHUT_RDWR) };
-
-        // unlink the sock and lock files
-        unsafe { libc::unlink(self.sock_path.as_ptr()) };
-        unsafe { libc::unlink(self.lock_path.as_ptr()) };
-    }
 }
 
 impl WaylandListener {
@@ -206,12 +193,7 @@ impl WaylandListener {
         }
 
         // build and return socket
-        Ok(Self {
-            sock_path,
-            lock_path,
-            sock_fd,
-            lock_fd,
-        })
+        Ok(Self { sock_fd, lock_fd })
     }
 }
 

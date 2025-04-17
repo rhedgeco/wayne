@@ -8,11 +8,8 @@ repository = "https://github.com/rhedgeco/wayne"
 readme = "README.md"
 
 [dependencies]
-bon = "3.3.2"
-derive_more = { version = "2.0.1", features = ["display"] }
+libc = "0.2"
 log = "0.4.26"
-thiserror = "2.0.12"
-rustix = { version = "1.0.1", features = ["net", "fs"] }
 
 [dev-dependencies]
 anyhow = "1.0.95"

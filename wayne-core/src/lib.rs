@@ -1,7 +1,7 @@
-pub mod client;
+pub mod buffer;
 pub mod message;
 pub mod socket;
 
-pub use client::ClientStream;
+pub use buffer::Buffer;
 pub use message::Message;
 pub use socket::WaylandSocket;

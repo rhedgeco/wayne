@@ -1,63 +1,29 @@
 use std::{
     io,
-    os::fd::{AsRawFd, OwnedFd},
+    marker::PhantomData,
+    os::fd::{AsFd, FromRawFd, OwnedFd},
 };
 
-use crate::{Buffer, Message, message::MessageParser};
-
-pub trait MessageRecv {
-    fn recv_fd(&mut self, fd: OwnedFd);
-    fn revc_message(&mut self, message: Message);
-}
-
-impl<T: MessageRecv> MessageRecv for &mut T {
-    fn recv_fd(&mut self, fd: OwnedFd) {
-        T::recv_fd(self, fd);
-    }
-
-    fn revc_message(&mut self, message: Message) {
-        T::revc_message(self, message);
-    }
-}
+use crate::{Buffer, sys};
 
 pub struct WaylandStream {
     stream_fd: OwnedFd,
-    parser: MessageParser,
 }
 
 impl WaylandStream {
     pub(crate) fn new(stream_fd: OwnedFd) -> Self {
-        Self {
-            stream_fd,
-            parser: MessageParser::new(),
-        }
+        Self { stream_fd }
     }
 
-    pub fn transfer<Data: Buffer, Control: Buffer>(
-        &mut self,
-        data_buffer: Data,
-        control_buffer: Control,
-    ) -> TransferBuilder<Data, Control> {
-        TransferBuilder {
-            stream: self,
-            data_buffer,
-            control_buffer,
-        }
-    }
-}
-
-pub struct TransferBuilder<'a, Data, Control> {
-    stream: &'a mut WaylandStream,
-    data_buffer: Data,
-    control_buffer: Control,
-}
-
-impl<'a, Data: Buffer, Control: Buffer> TransferBuilder<'a, Data, Control> {
-    pub fn recv(mut self, mut receiver: impl MessageRecv) -> io::Result<()> {
+    pub fn receive<'data, 'ctrl>(
+        &self,
+        data_buffer: &'data mut impl Buffer,
+        ctrl_buffer: &'ctrl mut impl Buffer,
+    ) -> io::Result<Received<'data, 'ctrl>> {
         // build scatter/gather array with single buffer
         let msg_iov = &mut [libc::iovec {
-            iov_base: self.data_buffer.buffer_ptr() as *mut _,
-            iov_len: self.data_buffer.buffer_len(),
+            iov_base: data_buffer.as_mut_ptr() as *mut _,
+            iov_len: data_buffer.len(),
         }];
 
         // build msghdr for the recv call
@@ -66,75 +32,107 @@ impl<'a, Data: Buffer, Control: Buffer> TransferBuilder<'a, Data, Control> {
             msg_namelen: 0,
             msg_iov: msg_iov.as_mut_ptr(),
             msg_iovlen: 1,
-            msg_control: self.control_buffer.buffer_ptr() as *mut _,
-            msg_controllen: self.control_buffer.buffer_len(),
+            msg_control: ctrl_buffer.as_mut_ptr() as *mut _,
+            msg_controllen: ctrl_buffer.len(),
             msg_flags: 0,
         };
 
-        // call recv_msg to get data from the client
-        let data_bytes = match unsafe {
-            libc::recvmsg(
-                self.stream.stream_fd.as_raw_fd(),
-                (&mut msghdr) as *mut _,
-                libc::MSG_CMSG_CLOEXEC | libc::MSG_DONTWAIT,
-            )
-        } {
-            -1 => match io::Error::last_os_error() {
-                // if we got a would block error, just return immediately
-                e if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-                e => return Err(e),
-            },
-            len => unsafe { self.data_buffer.assume_init(len as usize) },
-        };
+        // call recvmsg to get data from the client
+        let data_len = sys::recvmsg(self.stream_fd.as_fd(), &mut msghdr)?;
 
         // ensure no control data was truncated
         if msghdr.msg_flags & libc::MSG_CTRUNC > 0 {
-            return Err(io::Error::other("control buffer was too small"));
+            return Err(io::Error::other(
+                "control buffer too small. lost potential file descriptors",
+            ));
         }
 
-        // iterate over all cmsg data
-        for cmsghdr in CmsgIter::new(&msghdr) {
-            println!("got cmsg type: {}", cmsghdr.cmsg_type);
-        }
+        // get the data from the buffer
+        // SAFETY: the data buffer is garunteed to be initialized for exactly data_len
+        let bytes = unsafe { core::slice::from_raw_parts(data_buffer.as_ptr(), data_len) };
 
-        // parse all messages in the data_bytes
-        for message in self.stream.parser.parse(data_bytes) {
-            receiver.revc_message(message);
-        }
-
-        Ok(())
+        // build and return the received data
+        Ok(Received {
+            _ctrl: PhantomData,
+            msghdr,
+            bytes,
+        })
     }
 }
 
-struct CmsgIter<'a> {
-    header: &'a libc::msghdr,
-    current: Option<&'a libc::cmsghdr>,
+pub struct Received<'data, 'ctrl> {
+    _ctrl: PhantomData<&'ctrl [u8]>,
+    msghdr: libc::msghdr,
+    bytes: &'data [u8],
 }
 
-impl<'a> CmsgIter<'a> {
-    pub fn new(header: &'a libc::msghdr) -> Self {
-        Self {
-            header,
-            current: {
-                let ptr = unsafe { libc::CMSG_FIRSTHDR(header as *const _) };
-                match ptr.is_null() {
-                    false => Some(unsafe { &*ptr }),
-                    true => None,
-                }
-            },
+impl<'data, 'ctrl> Received<'data, 'ctrl> {
+    pub fn data(&self) -> &'data [u8] {
+        self.bytes
+    }
+
+    pub fn fds<'a>(&'a self) -> FdIter<'a, 'ctrl> {
+        FdIter {
+            msghdr: &self.msghdr,
+            state: Some(CmsgState::Start),
         }
     }
 }
 
-impl<'a> Iterator for CmsgIter<'a> {
-    type Item = &'a libc::cmsghdr;
+enum CmsgState<'ctrl> {
+    Start,
+    Next(&'ctrl libc::cmsghdr),
+}
+
+pub struct FdIter<'a, 'ctrl> {
+    msghdr: &'a libc::msghdr,
+    state: Option<CmsgState<'ctrl>>,
+}
+
+impl Iterator for FdIter<'_, '_> {
+    type Item = OwnedFd;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let current = self.current.take()?;
-        let next = unsafe { libc::CMSG_NXTHDR(self.header as *const _, current as *const _) };
-        if !next.is_null() {
-            self.current = Some(unsafe { &*next });
+        loop {
+            // get the next cmsg
+            let cmsg_ptr = match self.state.take()? {
+                CmsgState::Start => {
+                    // SAFETY: msghdr pointer is directly derived from a reference
+                    unsafe { libc::CMSG_FIRSTHDR(self.msghdr as *const _) }
+                }
+                CmsgState::Next(last) => {
+                    // SAFETY: msghdr and last cmsg pointers are directly derived from references
+                    unsafe { libc::CMSG_NXTHDR(self.msghdr as *const _, last as *const _) }
+                }
+            };
+
+            // ensure the ptr is valid
+            if cmsg_ptr.is_null() {
+                return None;
+            }
+
+            // SAFETY: when the cmsg_ptr is not null, it is garunteed to be valid here
+            let cmsg = unsafe { &*cmsg_ptr };
+
+            // store the cmsg for the next iteration
+            self.state = Some(CmsgState::Next(cmsg));
+
+            // ensure the cmsg is a file descriptor
+            // if it is not, just continue and try again
+            if cmsg.cmsg_type != libc::SCM_RIGHTS {
+                continue;
+            }
+
+            // load the fd pointer from the cmsg data
+            // SAFETY: cmsg_ptr is garunteed to be valid at this point
+            let fd_ptr = unsafe { libc::CMSG_DATA(cmsg_ptr) as *mut i32 };
+            // SAFETY: fd_ptr is valid for reads and is properly initialized by cmsg
+            let raw_fd = unsafe { core::ptr::read_unaligned(fd_ptr) };
+            // SAFETY: since raw_fd is valid, it can be built into an owned fd here
+            let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
+
+            // then return the valid fd
+            return Some(fd);
         }
-        Some(current)
     }
 }

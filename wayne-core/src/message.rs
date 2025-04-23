@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-pub struct Message {
+pub struct WaylandMessage {
     pub object_id: u32,
     pub opcode: u16,
     pub body: Box<[u8]>,
@@ -20,6 +20,12 @@ enum ParseState {
 #[derive(Debug)]
 pub struct MessageParser {
     state: ParseState,
+}
+
+impl Default for MessageParser {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MessageParser {
@@ -46,8 +52,8 @@ pub struct MessageStream<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> Iterator for MessageStream<'a> {
-    type Item = Message;
+impl Iterator for MessageStream<'_> {
+    type Item = WaylandMessage;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -119,7 +125,7 @@ impl<'a> Iterator for MessageStream<'a> {
 
                     // if the body is complete,
                     // build the message and return it.
-                    return Some(Message {
+                    return Some(WaylandMessage {
                         object_id,
                         opcode,
                         body: body.into_boxed_slice(),

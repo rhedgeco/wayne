@@ -10,11 +10,9 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let lit_str = parse_macro_input!(input as LitStr);
     let root_path: PathBuf = env::var("CARGO_MANIFEST_DIR").unwrap().into();
     match File::open(root_path.join(lit_str.value())) {
-        Err(err) => {
-            return syn::Error::new(lit_str.span(), err.to_string())
-                .into_compile_error()
-                .into();
-        }
+        Err(err) => syn::Error::new(lit_str.span(), err.to_string())
+            .into_compile_error()
+            .into(),
         Ok(file) => match quick_xml::de::from_reader::<_, Protocol>(BufReader::new(file)) {
             Ok(protocol) => protocol.into_token_stream().into(),
             Err(err) => syn::Error::new(lit_str.span(), err.to_string())
@@ -64,7 +62,7 @@ pub struct Interface {
     #[serde(rename = "@name")]
     pub name: String,
     #[serde(rename = "@version")]
-    pub version: u32,
+    pub _version: u32,
     pub description: Description,
     #[serde(default, rename = "request")]
     pub requests: Vec<Request>,
@@ -135,9 +133,9 @@ pub struct Arg {
     #[serde(rename = "@type")]
     pub ty: ArgType,
     #[serde(rename = "@interface")]
-    pub interface: Option<String>,
+    pub _interface: Option<String>,
     #[serde(rename = "@enum")]
-    pub enum_kind: Option<String>,
+    pub _enum_kind: Option<String>,
     #[serde(rename = "@summary")]
     pub summary: String,
 }
@@ -276,7 +274,7 @@ mod utils {
         let s = s.as_ref();
         match s.starts_with(|c: char| c.is_numeric()) {
             true => Ident::new(&format!("_{s}"), Span::call_site()),
-            false => Ident::new(s.as_ref(), Span::call_site()),
+            false => Ident::new(s, Span::call_site()),
         }
     }
 

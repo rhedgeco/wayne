@@ -50,12 +50,12 @@ fn main() -> anyhow::Result<()> {
             let recv = stream.receive(&mut data_buffer, &mut ctrl_buffer)?;
 
             // print the messages
-            for message in parser.parse(recv.data()) {
+            for message in parser.parse(recv.bytes()) {
                 println!("{message:?}");
             }
 
             // print the fds
-            for fd in recv.fds() {
+            for fd in recv.fd_iter() {
                 println!("FD: {fd:?}");
             }
         }

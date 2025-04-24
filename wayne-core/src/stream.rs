@@ -67,11 +67,11 @@ pub struct Received<'data, 'ctrl> {
 }
 
 impl<'data, 'ctrl> Received<'data, 'ctrl> {
-    pub fn data(&self) -> &'data [u8] {
+    pub fn bytes(&self) -> &'data [u8] {
         self.bytes
     }
 
-    pub fn fds<'a>(&'a self) -> FdIter<'a, 'ctrl> {
+    pub fn fd_iter<'a>(&'a self) -> FdIter<'a, 'ctrl> {
         FdIter {
             msghdr: &self.msghdr,
             state: Some(CmsgState::Start),

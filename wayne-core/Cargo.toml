@@ -3,13 +3,14 @@ name = "wayne-core"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "the core foundation structures for wayne"
+description = "core foundation structures for wayne"
 repository = "https://github.com/rhedgeco/wayne"
 readme = "README.md"
 
 [dependencies]
 libc = "0.2"
 log = "0.4"
+fs2 = "0.4"
 
 [dev-dependencies]
 anyhow = "1.0.95"

@@ -1,10 +1,11 @@
 pub mod buffer;
-pub mod listener;
+pub mod lock;
 pub mod message;
+pub mod socket;
 pub mod stream;
-pub mod sys;
 
 pub use buffer::Buffer;
-pub use listener::WaylandListener;
+pub use lock::AdvisoryLock;
 pub use message::WaylandMessage;
-pub use stream::WaylandStream;
+pub use socket::WaylandSocket;
+pub use stream::StreamExt;

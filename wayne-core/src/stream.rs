@@ -1,25 +1,33 @@
 use std::{
     io,
     marker::PhantomData,
-    os::fd::{AsFd, FromRawFd, OwnedFd},
+    os::{
+        fd::{AsRawFd, FromRawFd, OwnedFd},
+        unix::net::UnixStream,
+    },
 };
 
-use crate::{Buffer, sys};
+use crate::Buffer;
 
-pub struct WaylandStream {
-    stream_fd: OwnedFd,
+mod private {
+    pub trait Sealed {}
 }
 
-impl WaylandStream {
-    pub(crate) fn new(stream_fd: OwnedFd) -> Self {
-        Self { stream_fd }
-    }
-
-    pub fn receive<'data, 'ctrl>(
-        &self,
+pub trait StreamExt: private::Sealed {
+    fn read<'data, 'ctrl>(
+        &mut self,
         data_buffer: &'data mut impl Buffer,
         ctrl_buffer: &'ctrl mut impl Buffer,
-    ) -> io::Result<Received<'data, 'ctrl>> {
+    ) -> io::Result<ReadData<'data, 'ctrl>>;
+}
+
+impl private::Sealed for UnixStream {}
+impl StreamExt for UnixStream {
+    fn read<'data, 'ctrl>(
+        &mut self,
+        data_buffer: &'data mut impl Buffer,
+        ctrl_buffer: &'ctrl mut impl Buffer,
+    ) -> io::Result<ReadData<'data, 'ctrl>> {
         // build scatter/gather array with single buffer
         let msg_iov = &mut [libc::iovec {
             iov_base: data_buffer.as_mut_ptr() as *mut _,
@@ -37,8 +45,25 @@ impl WaylandStream {
             msg_flags: 0,
         };
 
+        // ensure the control buffer is zeroed
+        for offset in 0..ctrl_buffer.len() {
+            unsafe { ctrl_buffer.as_mut_ptr().byte_add(offset).write(0) };
+        }
+
         // call recvmsg to get data from the client
-        let data_len = sys::recvmsg(self.stream_fd.as_fd(), &mut msghdr)?;
+        let data_len = match unsafe {
+            libc::recvmsg(
+                self.as_raw_fd(),
+                (&mut msghdr) as *mut _,
+                libc::MSG_CMSG_CLOEXEC | libc::MSG_DONTWAIT,
+            )
+        } {
+            ..0 => match io::Error::last_os_error() {
+                e if e.kind() == io::ErrorKind::WouldBlock => 0,
+                e => return Err(e),
+            },
+            data_len => data_len as usize,
+        };
 
         // ensure no control data was truncated
         if msghdr.msg_flags & libc::MSG_CTRUNC > 0 {
@@ -49,73 +74,67 @@ impl WaylandStream {
 
         // get the data from the buffer
         // SAFETY: the data buffer is garunteed to be initialized for exactly data_len
-        let bytes = unsafe { core::slice::from_raw_parts(data_buffer.as_ptr(), data_len) };
+        let data = unsafe { core::slice::from_raw_parts(data_buffer.as_ptr(), data_len) };
 
         // build and return the received data
-        Ok(Received {
+        Ok(ReadData {
             _ctrl: PhantomData,
             msghdr,
-            bytes,
+            data,
         })
     }
 }
 
-pub struct Received<'data, 'ctrl> {
+pub struct ReadData<'data, 'ctrl> {
     _ctrl: PhantomData<&'ctrl [u8]>,
     msghdr: libc::msghdr,
-    bytes: &'data [u8],
+    data: &'data [u8],
 }
 
-impl<'data, 'ctrl> Received<'data, 'ctrl> {
-    pub fn bytes(&self) -> &'data [u8] {
-        self.bytes
+impl<'data, 'ctrl> ReadData<'data, 'ctrl> {
+    pub fn data(&self) -> &'data [u8] {
+        self.data
     }
 
-    pub fn fd_iter<'a>(&'a self) -> FdIter<'a, 'ctrl> {
-        FdIter {
+    pub fn fds(&self) -> Fds {
+        Fds {
             msghdr: &self.msghdr,
-            state: Some(CmsgState::Start),
+            last: None,
         }
     }
 }
 
-enum CmsgState<'ctrl> {
-    Start,
-    Next(&'ctrl libc::cmsghdr),
-}
-
-pub struct FdIter<'a, 'ctrl> {
+pub struct Fds<'a> {
     msghdr: &'a libc::msghdr,
-    state: Option<CmsgState<'ctrl>>,
+    last: Option<*const libc::cmsghdr>,
 }
 
-impl Iterator for FdIter<'_, '_> {
+impl Iterator for Fds<'_> {
     type Item = OwnedFd;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // get the next cmsg
-            let cmsg_ptr = match self.state.take()? {
-                CmsgState::Start => {
-                    // SAFETY: msghdr pointer is directly derived from a reference
-                    unsafe { libc::CMSG_FIRSTHDR(self.msghdr as *const _) }
-                }
-                CmsgState::Next(last) => {
+            let cmsg_ptr = match self.last {
+                Some(last) => unsafe {
                     // SAFETY: msghdr and last cmsg pointers are directly derived from references
-                    unsafe { libc::CMSG_NXTHDR(self.msghdr as *const _, last as *const _) }
-                }
+                    libc::CMSG_NXTHDR(self.msghdr as *const _, last)
+                },
+                None => unsafe {
+                    // SAFETY: msghdr pointer is directly derived from a reference
+                    libc::CMSG_FIRSTHDR(self.msghdr as *const _)
+                },
             };
 
-            // ensure the ptr is valid
+            // ensure the ptr is non null
             if cmsg_ptr.is_null() {
                 return None;
             }
 
-            // SAFETY: when the cmsg_ptr is not null, it is garunteed to be valid here
-            let cmsg = unsafe { &*cmsg_ptr };
-
             // store the cmsg for the next iteration
-            self.state = Some(CmsgState::Next(cmsg));
+            self.last = Some(cmsg_ptr);
+
+            // SAFETY: cmsg_ptr is garunteed to be not null
+            let cmsg = unsafe { core::ptr::read_unaligned(cmsg_ptr) };
 
             // ensure the cmsg is a file descriptor
             // if it is not, just continue and try again
@@ -128,11 +147,10 @@ impl Iterator for FdIter<'_, '_> {
             let fd_ptr = unsafe { libc::CMSG_DATA(cmsg_ptr) as *mut i32 };
             // SAFETY: fd_ptr is valid for reads and is properly initialized by cmsg
             let raw_fd = unsafe { core::ptr::read_unaligned(fd_ptr) };
-            // SAFETY: since raw_fd is valid, it can be built into an owned fd here
-            let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
 
             // then return the valid fd
-            return Some(fd);
+            // SAFETY: since raw_fd is valid, it can be built into an owned fd here
+            return Some(unsafe { OwnedFd::from_raw_fd(raw_fd) });
         }
     }
 }

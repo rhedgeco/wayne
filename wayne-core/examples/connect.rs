@@ -3,6 +3,8 @@ use std::{mem::MaybeUninit, process::Command};
 use wayne_core::{StreamExt, WaylandSocket, message::MessageParser};
 
 fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     // bind the wayland socket to an available port
     let socket = WaylandSocket::bind(32)?;
 
@@ -18,7 +20,7 @@ fn main() -> anyhow::Result<()> {
     loop {
         // accept all pending clients
         if let Some(stream) = socket.accept()? {
-            println!("Client Connected");
+            log::debug!("Wayland client connected to socket");
             clients.push((stream, MessageParser::new()));
         }
 
@@ -28,12 +30,12 @@ fn main() -> anyhow::Result<()> {
 
             // print the messages
             for message in parser.parse(recv.data()) {
-                println!("{message:?}");
+                log::info!("{message:?}");
             }
 
             // print the fds
             for fd in recv.fds() {
-                println!("FD: {fd:?}");
+                log::info!("FD: {fd:?}");
             }
         }
     }

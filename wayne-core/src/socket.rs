@@ -1,6 +1,6 @@
 use std::{
     env::{self, VarError},
-    io,
+    fs, io,
     os::unix::net::{UnixListener, UnixStream},
     path::PathBuf,
 };
@@ -45,11 +45,23 @@ impl WaylandSocket {
 
         // create a function to bind a socket path
         let bind_name = |name: String| -> io::Result<WaylandSocket> {
+            // create the sock and lock paths
             let sock_path = xdg_dir.join(&name);
             let lock_path = sock_path.with_extension("lock");
+
+            // aquire the wayland advisory lock
             let lock = AdvisoryLock::aquire(lock_path)?;
+
+            // if the sock path already exists, try to remove it
+            if sock_path.exists() {
+                fs::remove_file(&sock_path)?;
+            }
+
+            // bind the listener as non-blocking
             let listener = UnixListener::bind(sock_path)?;
             listener.set_nonblocking(true)?;
+
+            // build and return the socket
             Ok(WaylandSocket {
                 listener,
                 lock,
@@ -59,8 +71,13 @@ impl WaylandSocket {
 
         // try binding a range of wayland socket locations
         for index in 0..max {
-            return match bind_name(format!("wayland-{index}")) {
-                Ok(socket) => Ok(socket),
+            let name = format!("wayland-{index}");
+            log::debug!("Trying to bind wayland socket '{name}'");
+            return match bind_name(name) {
+                Ok(socket) => {
+                    log::debug!("Wayland socket '{}' connected!", socket.name());
+                    Ok(socket)
+                }
                 Err(e) => match e.kind() {
                     // if an address is in use or a blocking procedure was reached,
                     // continue and to try the next socket address

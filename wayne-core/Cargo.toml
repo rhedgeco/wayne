@@ -16,3 +16,4 @@ thiserror = "2.0"
 [dev-dependencies]
 anyhow = "1.0.95"
 constcat = "0.6.0"
+env_logger = "0.11"

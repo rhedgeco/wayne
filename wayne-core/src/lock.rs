@@ -23,7 +23,7 @@ impl AdvisoryLock {
         self.0
     }
 
-    pub fn lock(path: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn aquire(path: impl AsRef<Path>) -> io::Result<Self> {
         let path = path.as_ref();
 
         // aquire the lockfile

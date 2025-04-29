@@ -8,9 +8,10 @@ repository = "https://github.com/rhedgeco/wayne"
 readme = "README.md"
 
 [dependencies]
+fs2 = "0.4"
 libc = "0.2"
 log = "0.4"
-fs2 = "0.4"
+thiserror = "2.0"
 
 [dev-dependencies]
 anyhow = "1.0.95"

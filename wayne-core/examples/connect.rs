@@ -1,37 +1,14 @@
-use std::{env, io, mem::MaybeUninit, path::PathBuf, process::Command};
+use std::{mem::MaybeUninit, process::Command};
 
 use wayne_core::{StreamExt, WaylandSocket, message::MessageParser};
 
 fn main() -> anyhow::Result<()> {
-    // get the XDG_RUNTIME_DIR path
-    let xdg_dir: PathBuf = env::var("XDG_RUNTIME_DIR")?.into();
-
-    // try to bind a wayland socket
-    let mut index = 0;
-    let (socket, sock_name) = loop {
-        let sock_name = format!("wayland-{index}");
-        println!("Trying to bind to socket '{sock_name}'...");
-        match WaylandSocket::bind(xdg_dir.join(&sock_name)) {
-            Ok(listener) => {
-                println!("Success!");
-                break (listener, sock_name);
-            }
-            Err(e) => match e.kind() {
-                io::ErrorKind::AddrInUse | io::ErrorKind::WouldBlock => {}
-                _ => return Err(e.into()),
-            },
-        };
-
-        index += 1;
-        if index > 32 {
-            eprintln!("Failed to bind socket. No sockets in range 0-32");
-            return Ok(());
-        }
-    };
+    // bind the wayland socket to an available port
+    let socket = WaylandSocket::bind(32)?;
 
     // spawn a terminal connected to the socket
     Command::new("weston-terminal")
-        .env("WAYLAND_DISPLAY", sock_name)
+        .env("WAYLAND_DISPLAY", socket.name())
         .spawn()?;
 
     // create a loop to process events

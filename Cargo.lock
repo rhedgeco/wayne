@@ -585,6 +585,7 @@ dependencies = [
  "fs2",
  "libc",
  "log",
+ "thiserror",
 ]
 
 [[package]]

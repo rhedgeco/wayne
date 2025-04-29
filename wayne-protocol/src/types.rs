@@ -1,5 +1,5 @@
 macro_rules! newtype {
-    ($inner:ident => $outer:ident) => {
+    ($outer:ident: $inner:ty) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $outer($inner);
 
@@ -15,6 +15,6 @@ macro_rules! newtype {
     };
 }
 
-newtype!(u32 => ObjectId);
-newtype!(u32 => NewId);
-newtype!(u16 => Opcode);
+newtype!(ObjectId: u32);
+newtype!(NewId: u32);
+newtype!(Opcode: u16);

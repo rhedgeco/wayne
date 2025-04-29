@@ -4,12 +4,19 @@
 
 `wayne` is an experimental implementation of the wayland server protocol entirely in rust. It does not attempt to mirror the `libwayland` api, but rather re-imagine the api in a way that works best with rusty patterns and norms. This also means a departure from the built-in `libwayland` event loop, providing a more versitile _"bring your own"_ event loop architecture instead.
 
+### Reference
+Wayland documentation and reference can be found in a few places:
+
+- [Wayland Website](https://wayland.freedesktop.org/)
+- [Wayland Explorer](https://wayland.app/protocols/)
+- [Wayland Book](https://wayland-book.com/)
+
 ### License
 
 Licensed under either of
 
- * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 

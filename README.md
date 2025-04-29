@@ -7,9 +7,9 @@
 ### Reference
 Wayland documentation and reference can be found in a few places:
 
-- [Wayland Website](https://wayland.freedesktop.org/)
-- [Wayland Explorer](https://wayland.app/protocols/)
-- [Wayland Book](https://wayland-book.com/)
+- [Wayland Website](https://wayland.freedesktop.org/) - The main wayland website
+- [Wayland Explorer](https://wayland.app/protocols/) - A pretty wayland protocol explorer
+- [Wayland Book](https://wayland-book.com/) - Explaining the wayland protocol
 
 ### License
 

@@ -15,7 +15,7 @@ pub enum BindError {
     Io(#[from] io::Error),
     #[error("Failed to get 'XDG_RUNTIME_DIR': {_0}")]
     VarError(#[from] VarError),
-    #[error("Failed to bind wayland socket in range 0-{_0}")]
+    #[error("Failed to bind wayland socket in range 0 to {_0}")]
     InUse(usize),
 }
 

@@ -4,21 +4,41 @@ use convert_case::{Case, Casing};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use serde::Deserialize;
-use syn::{Ident, LitStr, parse_macro_input};
+use syn::{
+    Ident, LitStr, Path, Token,
+    parse::{Parse, ParseStream},
+};
 
-pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let lit_str = parse_macro_input!(input as LitStr);
-    let root_path: PathBuf = env::var("CARGO_MANIFEST_DIR").unwrap().into();
-    match File::open(root_path.join(lit_str.value())) {
-        Err(err) => syn::Error::new(lit_str.span(), err.to_string())
-            .into_compile_error()
-            .into(),
-        Ok(file) => match quick_xml::de::from_reader::<_, Protocol>(BufReader::new(file)) {
-            Ok(protocol) => protocol.into_token_stream().into(),
-            Err(err) => syn::Error::new(lit_str.span(), err.to_string())
-                .into_compile_error()
-                .into(),
-        },
+pub struct Context {
+    crate_path: Path,
+    file_path: LitStr,
+}
+
+impl Context {
+    pub fn load(&self) -> syn::Result<Generator> {
+        let root_path: PathBuf = env::var("CARGO_MANIFEST_DIR").unwrap().into();
+        match File::open(root_path.join(self.file_path.value())) {
+            Err(err) => Err(syn::Error::new(self.file_path.span(), err.to_string())),
+            Ok(file) => match quick_xml::de::from_reader::<_, Protocol>(BufReader::new(file)) {
+                Err(err) => Err(syn::Error::new(self.file_path.span(), err.to_string())),
+                Ok(protocol) => Ok(Generator {
+                    crate_path: &self.crate_path,
+                    protocol,
+                }),
+            },
+        }
+    }
+}
+
+impl Parse for Context {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let crate_path = input.parse::<Path>()?;
+        let _ = input.parse::<Token![,]>()?;
+        let file_path = input.parse::<LitStr>()?;
+        Ok(Self {
+            crate_path,
+            file_path,
+        })
     }
 }
 
@@ -31,12 +51,19 @@ pub struct Protocol {
     pub interfaces: Vec<Interface>,
 }
 
-impl ToTokens for Protocol {
+pub struct Generator<'a> {
+    crate_path: &'a Path,
+    protocol: Protocol,
+}
+
+impl ToTokens for Generator<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let ident = Ident::new(&self.name, Span::call_site());
-        let interfaces = &self.interfaces;
+        let crate_path = self.crate_path;
+        let protocol = Ident::new(&self.protocol.name, Span::call_site());
+        let interfaces = &self.protocol.interfaces;
         tokens.extend(quote! {
-            pub mod #ident {
+            pub mod #protocol {
+                use #crate_path::*;
                 #(#interfaces)*
             }
         });
@@ -74,7 +101,8 @@ pub struct Interface {
 
 impl ToTokens for Interface {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let ident = Ident::new(&self.name, Span::call_site());
+        let ident_mod = Ident::new(&self.name, Span::call_site());
+        let ident_struct = Ident::new(&self.name.to_case(Case::Pascal), Span::call_site());
         let requests = &self.requests;
         let events = &self.events;
         let enums = &self.enums;
@@ -87,7 +115,9 @@ impl ToTokens for Interface {
         });
         tokens.extend(quote! {
             #(#docs)*
-            pub mod #ident {
+            pub struct #ident_struct(());
+            pub mod #ident_mod {
+                use super::*;
                 #(#requests)*
                 #(#events)*
                 #(#enums)*
@@ -133,9 +163,11 @@ pub struct Arg {
     #[serde(rename = "@type")]
     pub ty: ArgType,
     #[serde(rename = "@interface")]
-    pub _interface: Option<String>,
+    pub interface: Option<String>,
     #[serde(rename = "@enum")]
-    pub _enum_kind: Option<String>,
+    pub enum_kind: Option<String>,
+    #[serde(rename = "@allow-null")]
+    pub allow_null: Option<String>,
     #[serde(rename = "@summary")]
     pub summary: String,
 }
@@ -144,10 +176,53 @@ impl ToTokens for Arg {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let docs = &self.summary;
         let arg_ident = Ident::new(&self.name, Span::call_site());
-        let arg_ty = &self.ty;
+
+        let enum_kind = self.enum_kind.as_ref().map(|kind| {
+            let mut parts = kind.split(".");
+            let first = parts.next().unwrap();
+            match parts.next() {
+                Some(second) => {
+                    let interface = Ident::new(first, Span::call_site());
+                    let ident_name = second.to_case(Case::Pascal);
+                    let ident = Ident::new(&ident_name, Span::call_site());
+                    quote! { #interface::#ident }
+                }
+                None => {
+                    let ident_name = first.to_case(Case::Pascal);
+                    let ident = Ident::new(&ident_name, Span::call_site());
+                    ident.into_token_stream()
+                }
+            }
+        });
+
+        let interface = match &self.interface {
+            None => quote! { () },
+            Some(interface) => {
+                let ident_name = interface.to_case(Case::Pascal);
+                let ident = Ident::new(&ident_name, Span::call_site());
+                quote! { #ident }
+            }
+        };
+
+        let arg_ty = match self.ty {
+            ArgType::Fixed => quote! { types::Fixed },
+            ArgType::String => quote! { String },
+            ArgType::Array => quote! { Box<[u8]> },
+            ArgType::Fd => quote! { ::std::os::fd::OwnedFd },
+            ArgType::Object => quote! { types::ObjectId<#interface> },
+            ArgType::NewId => quote! { types::NewId<#interface> },
+            ArgType::Int => enum_kind.unwrap_or_else(|| quote! { i32 }),
+            ArgType::Uint => enum_kind.unwrap_or_else(|| quote! { u32 }),
+        };
+
+        let arg_ty = match self.allow_null {
+            Some(_) => quote! { Option<#arg_ty> },
+            None => arg_ty,
+        };
+
         tokens.extend(quote! {
             #[doc = #docs]
-            #arg_ident: #arg_ty
+            pub #arg_ident: #arg_ty
         });
     }
 }
@@ -175,7 +250,7 @@ impl ToTokens for ArgType {
             ArgType::Object => quote! {u32},
             ArgType::NewId => quote! {u32},
             ArgType::Array => quote! {Box<[u8]>},
-            ArgType::Fd => quote! {()},
+            ArgType::Fd => quote! {::std::os::fd::OwnedFd},
         });
     }
 }

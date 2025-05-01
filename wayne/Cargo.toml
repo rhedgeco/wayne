@@ -1,0 +1,12 @@
+[package]
+name = "wayne"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "an experimental implementation of the wayland server protocol"
+repository = "https://github.com/rhedgeco/wayne"
+readme = "README.md"
+
+[dependencies]
+wayne-core.workspace = true
+wayne-protocol.workspace = true

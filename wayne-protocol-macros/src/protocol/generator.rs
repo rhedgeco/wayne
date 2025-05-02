@@ -41,7 +41,12 @@ impl ToTokens for Generator {
         let interface_data = self.protocol.interfaces.iter().map(Data);
         tokens.extend(quote! {
             pub mod #ident {
-                use #crate_path::*;
+
+                // re-export all crate items
+                mod __crate {
+                    pub use #crate_path::*;
+                }
+
                 #(#interface_data)*
             }
         });
@@ -191,12 +196,12 @@ impl ToTokens for Data<&Arg> {
         };
 
         let mut arg_ty = match self.0.ty {
-            ArgType::Fixed => quote! { types::Fixed },
+            ArgType::Fixed => quote! { __crate::types::Fixed },
             ArgType::String => quote! { String },
             ArgType::Array => quote! { Box<[u8]> },
             ArgType::Fd => quote! { ::std::os::fd::OwnedFd },
-            ArgType::Object => quote! { types::ObjectId<#interface> },
-            ArgType::NewId => quote! { types::NewId<#interface> },
+            ArgType::Object => quote! { __crate::types::ObjectId<#interface> },
+            ArgType::NewId => quote! { __crate::types::NewId<#interface> },
             ArgType::Int => enum_kind.unwrap_or_else(|| quote! { i32 }),
             ArgType::Uint => enum_kind.unwrap_or_else(|| quote! { u32 }),
         };

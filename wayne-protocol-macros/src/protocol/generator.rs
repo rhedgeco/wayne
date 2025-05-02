@@ -11,13 +11,13 @@ use syn::{
 use super::xml::{Arg, ArgType, Entry, Enum, Event, Interface, Protocol, Request};
 
 pub struct Generator {
-    crate_path: Path,
+    protocol_path: Path,
     protocol: Protocol,
 }
 
 impl Parse for Generator {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let crate_path = input.parse::<Path>()?;
+        let protocol_path = input.parse::<Path>()?;
         let _ = input.parse::<Token![,]>()?;
         let file_path = input.parse::<LitStr>()?;
         let root_path: PathBuf = env::var("CARGO_MANIFEST_DIR").unwrap().into();
@@ -26,7 +26,7 @@ impl Parse for Generator {
             Ok(file) => match quick_xml::de::from_reader::<_, Protocol>(BufReader::new(file)) {
                 Err(err) => Err(syn::Error::new(file_path.span(), err)),
                 Ok(protocol) => Ok(Self {
-                    crate_path,
+                    protocol_path,
                     protocol,
                 }),
             },
@@ -36,15 +36,15 @@ impl Parse for Generator {
 
 impl ToTokens for Generator {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let crate_path = &self.crate_path;
+        let protocol_path = &self.protocol_path;
         let ident = utils::ident(&self.protocol.name);
         let interface_data = self.protocol.interfaces.iter().map(Data);
         tokens.extend(quote! {
             pub mod #ident {
 
-                // re-export all crate items
-                mod __crate {
-                    pub use #crate_path::*;
+                // re-export all protocol items
+                mod __protocol {
+                    pub use #protocol_path::*;
                 }
 
                 #(#interface_data)*
@@ -196,12 +196,12 @@ impl ToTokens for Data<&Arg> {
         };
 
         let mut arg_ty = match self.0.ty {
-            ArgType::Fixed => quote! { __crate::types::Fixed },
+            ArgType::Fixed => quote! { __protocol::types::Fixed },
             ArgType::String => quote! { String },
             ArgType::Array => quote! { Box<[u8]> },
             ArgType::Fd => quote! { ::std::os::fd::OwnedFd },
-            ArgType::Object => quote! { __crate::types::ObjectId<#interface> },
-            ArgType::NewId => quote! { __crate::types::NewId<#interface> },
+            ArgType::Object => quote! { __protocol::types::ObjectId<#interface> },
+            ArgType::NewId => quote! { __protocol::types::NewId<#interface> },
             ArgType::Int => enum_kind.unwrap_or_else(|| quote! { i32 }),
             ArgType::Uint => enum_kind.unwrap_or_else(|| quote! { u32 }),
         };

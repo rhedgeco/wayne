@@ -200,7 +200,7 @@ impl ToTokens for Data<&Arg> {
             ArgType::String => quote! { String },
             ArgType::Array => quote! { Box<[u8]> },
             ArgType::Fd => quote! { ::std::os::fd::OwnedFd },
-            ArgType::Object => quote! { __protocol::types::ObjectId<#interface> },
+            ArgType::Object => quote! { __protocol::types::ObjId<#interface> },
             ArgType::NewId => quote! { __protocol::types::NewId<#interface> },
             ArgType::Int => enum_kind.unwrap_or_else(|| quote! { i32 }),
             ArgType::Uint => enum_kind.unwrap_or_else(|| quote! { u32 }),

@@ -46,12 +46,12 @@ impl Fixed {
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ObjectId<T> {
+pub struct ObjId<T> {
     _type: PhantomData<fn() -> T>,
     raw: u32,
 }
 
-impl<T> ObjectId<T> {
+impl<T> ObjId<T> {
     pub const fn from_raw(raw: u32) -> Self {
         Self {
             _type: PhantomData,

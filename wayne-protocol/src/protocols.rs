@@ -1,1 +1,1 @@
-crate::generate!("protocol/wayland.xml");
+crate::protocol!("protocol/wayland.xml");

@@ -11,6 +11,12 @@ mod protocol;
 /// This macro takes two parameters separated by a comma `protocol!(protocol_path, file_path)` and generates the associated rust structures:
 /// - `protocol_path`: the absolute path to the `wayne-protocol` crate.
 /// - `file_path`: the path to the protocol xml file relative to the crate root.
+///
+/// ```no_run
+/// // uses `path::to::module` as the root module for generated protocol types
+/// // and generates the associated rust code for the xml at `path/to/wayland.xml`
+/// protocol!(path::to::module, "path/to/wayland.xml");
+/// ```
 #[proc_macro]
 pub fn protocol(input: TokenStream) -> TokenStream {
     parse_macro_input!(input as protocol::Generator)

@@ -49,16 +49,8 @@ impl Fixed {
         Self(I24F8::from_num(value))
     }
 
-    pub const fn from_be_bytes(bytes: [u8; 4]) -> Self {
-        Self(I24F8::from_be_bytes(bytes))
-    }
-
-    pub const fn from_le_bytes(bytes: [u8; 4]) -> Self {
-        Self(I24F8::from_le_bytes(bytes))
-    }
-
-    pub const fn from_ne_bytes(bytes: [u8; 4]) -> Self {
-        Self(I24F8::from_ne_bytes(bytes))
+    pub const fn from_raw(value: i32) -> Self {
+        Self(I24F8::from_bits(value))
     }
 }
 

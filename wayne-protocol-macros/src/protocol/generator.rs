@@ -115,11 +115,13 @@ impl ToTokens for Data<&Interface> {
 
                 const VERSION: u32 = #version;
 
+                #[derive(Debug)]
                 pub enum #main_enum {
                     Request(#request_enum),
                     Event(#event_enum),
                 }
 
+                #[derive(Debug)]
                 pub enum #request_enum {
                     #(#request_variants(#request_items),)*
                 }
@@ -157,6 +159,7 @@ impl ToTokens for Data<&Interface> {
                     }
                 }
 
+                #[derive(Debug)]
                 pub enum #event_enum {
                     #(#event_variants(#event_items),)*
                 }
@@ -212,6 +215,7 @@ impl ToTokens for Data<&Request> {
 
         tokens.extend(quote! {
             #(#[doc = #docs])*
+            #[derive(Debug)]
             pub struct #ident {
                 #(#args,)*
             }
@@ -233,6 +237,7 @@ impl ToTokens for Data<&Event> {
 
         tokens.extend(quote! {
             #(#[doc = #docs])*
+            #[derive(Debug)]
             pub struct #ident {
                 #(#args,)*
             }
@@ -255,6 +260,7 @@ impl ToTokens for Data<&Enum> {
 
         tokens.extend(quote! {
             #(#[doc = #docs])*
+            #[derive(Debug)]
             #[repr(u32)]
             pub enum #ident {
                 #(

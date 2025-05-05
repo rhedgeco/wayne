@@ -2,87 +2,6 @@ use std::os::fd::OwnedFd;
 
 use crate::types::{Fixed, RawId};
 
-pub trait Buffer {
-    fn take_byte(&mut self) -> Option<u8>;
-    fn take_fd(&mut self) -> Option<OwnedFd>;
-}
-
-impl<T: Buffer> Buffer for &mut T {
-    fn take_byte(&mut self) -> Option<u8> {
-        T::take_byte(self)
-    }
-
-    fn take_fd(&mut self) -> Option<OwnedFd> {
-        T::take_fd(self)
-    }
-}
-
-enum BuildState<P: Parser> {
-    Output(P::Output),
-    Parser(P),
-}
-
-pub struct Builder<P: Parser, F> {
-    state: BuildState<P>,
-    fds: Vec<OwnedFd>,
-    map: F,
-}
-
-impl<P, F, O> Builder<P, F>
-where
-    P: Parser,
-    F: FnOnce(P::Output, Box<[OwnedFd]>) -> O,
-{
-    pub fn build(mut self, mut buffer: impl Buffer) -> Result<O, Self> {
-        let out = match self.state {
-            BuildState::Output(out) => out,
-            // keep taking bytes until parsing is complete
-            BuildState::Parser(mut parser) => loop {
-                // if we run out of bytes, just return incomplete
-                let Some(byte) = buffer.take_byte() else {
-                    self.state = BuildState::Parser(parser);
-                    return Err(self);
-                };
-
-                // otherwise parse the next byte
-                match parser.parse(byte) {
-                    Err(p) => parser = p,
-                    Ok(out) => break out,
-                }
-            },
-        };
-
-        // keep taking file descriptors until complete
-        while self.fds.len() < self.fds.capacity() {
-            // if we run out of fds, just return incomplete
-            let Some(fd) = buffer.take_fd() else {
-                self.state = BuildState::Output(out);
-                return Err(self);
-            };
-
-            // othwerwise store the received file descriptor
-            self.fds.push(fd);
-        }
-
-        // if we are finished parsing, and we have all file descriptors, then the builder is complete
-        Ok((self.map)(out, self.fds.into_boxed_slice()))
-    }
-}
-
-impl<P: Parser> BuilderExt for P {}
-pub trait BuilderExt: Parser {
-    fn builder<F>(self, fds: usize, f: F) -> Builder<Self, F>
-    where
-        F: FnOnce(Self::Output, Box<[OwnedFd]>),
-    {
-        Builder {
-            state: BuildState::Parser(self),
-            fds: Vec::with_capacity(fds),
-            map: f,
-        }
-    }
-}
-
 #[allow(unused_variables)]
 pub trait Parser: Sized {
     type Output;
@@ -251,6 +170,87 @@ pub trait ThenExt: Parser {
     {
         Then {
             state: ThenState::First(self.map(f)),
+        }
+    }
+}
+
+pub trait Buffer {
+    fn take_byte(&mut self) -> Option<u8>;
+    fn take_fd(&mut self) -> Option<OwnedFd>;
+}
+
+impl<T: Buffer> Buffer for &mut T {
+    fn take_byte(&mut self) -> Option<u8> {
+        T::take_byte(self)
+    }
+
+    fn take_fd(&mut self) -> Option<OwnedFd> {
+        T::take_fd(self)
+    }
+}
+
+enum BuildState<P: Parser> {
+    Output(P::Output),
+    Parser(P),
+}
+
+pub struct Builder<P: Parser, F> {
+    state: BuildState<P>,
+    fds: Vec<OwnedFd>,
+    map: F,
+}
+
+impl<P, F, O> Builder<P, F>
+where
+    P: Parser,
+    F: FnOnce(P::Output, Box<[OwnedFd]>) -> O,
+{
+    pub fn build(mut self, mut buffer: impl Buffer) -> Result<O, Self> {
+        let out = match self.state {
+            BuildState::Output(out) => out,
+            // keep taking bytes until parsing is complete
+            BuildState::Parser(mut parser) => loop {
+                // if we run out of bytes, just return incomplete
+                let Some(byte) = buffer.take_byte() else {
+                    self.state = BuildState::Parser(parser);
+                    return Err(self);
+                };
+
+                // otherwise parse the next byte
+                match parser.parse(byte) {
+                    Err(p) => parser = p,
+                    Ok(out) => break out,
+                }
+            },
+        };
+
+        // keep taking file descriptors until complete
+        while self.fds.len() < self.fds.capacity() {
+            // if we run out of fds, just return incomplete
+            let Some(fd) = buffer.take_fd() else {
+                self.state = BuildState::Output(out);
+                return Err(self);
+            };
+
+            // othwerwise store the received file descriptor
+            self.fds.push(fd);
+        }
+
+        // if we are finished parsing, and we have all file descriptors, then the builder is complete
+        Ok((self.map)(out, self.fds.into_boxed_slice()))
+    }
+}
+
+impl<P: Parser> BuilderExt for P {}
+pub trait BuilderExt: Parser {
+    fn builder<F>(self, fds: usize, f: F) -> Builder<Self, F>
+    where
+        F: FnOnce(Self::Output, Box<[OwnedFd]>),
+    {
+        Builder {
+            state: BuildState::Parser(self),
+            fds: Vec::with_capacity(fds),
+            map: f,
         }
     }
 }

@@ -68,9 +68,25 @@ impl<T: Buffer> Buffer for &mut T {
     }
 }
 
+pub enum ParseError<P> {
+    Incomplete(P),
+    InvalidBytes,
+}
+
+impl<P> ParseError<P> {
+    pub fn map<P2>(self, f: impl FnOnce(P) -> P2) -> ParseError<P2> {
+        match self {
+            ParseError::Incomplete(parser) => ParseError::Incomplete((f)(parser)),
+            ParseError::InvalidBytes => ParseError::InvalidBytes,
+        }
+    }
+}
+
+pub type ParseResult<P> = Result<<P as Parser>::Output, ParseError<P>>;
+
 pub trait Parser: Sized {
     type Output;
-    fn parse(self, buffer: impl Buffer) -> Result<Self::Output, Self>;
+    fn parse(self, buffer: impl Buffer) -> ParseResult<Self>;
 }
 
 pub struct Fd(());
@@ -84,11 +100,29 @@ impl Fd {
 impl Parser for Fd {
     type Output = OwnedFd;
 
-    fn parse(self, mut buffer: impl Buffer) -> Result<Self::Output, Self> {
+    fn parse(self, mut buffer: impl Buffer) -> ParseResult<Self> {
         match buffer.take_fd() {
+            None => Err(ParseError::Incomplete(self)),
             Some(fd) => Ok(fd),
-            None => Err(self),
         }
+    }
+}
+
+pub struct Pass<T> {
+    item: T,
+}
+
+impl<T> Pass<T> {
+    pub fn new(item: T) -> Self {
+        Self { item }
+    }
+}
+
+impl<T> Parser for Pass<T> {
+    type Output = T;
+
+    fn parse(self, _: impl Buffer) -> ParseResult<Self> {
+        Ok(self.item)
     }
 }
 
@@ -105,11 +139,11 @@ impl Consume {
 
 impl Parser for Consume {
     type Output = (usize, usize);
-    fn parse(mut self, mut buffer: impl Buffer) -> Result<Self::Output, Self> {
+    fn parse(mut self, mut buffer: impl Buffer) -> ParseResult<Self> {
         // consume bytes until complete
         while self.bytes > 0 {
             if buffer.take_byte().is_none() {
-                return Err(self);
+                return Err(ParseError::Incomplete(self));
             };
 
             self.bytes -= 1;
@@ -118,7 +152,7 @@ impl Parser for Consume {
         // consume fds until complete
         while self.fds > 0 {
             if buffer.take_fd().is_none() {
-                return Err(self);
+                return Err(ParseError::Incomplete(self));
             };
 
             self.fds -= 1;
@@ -142,12 +176,12 @@ impl Bytes {
 
 impl Parser for Bytes {
     type Output = Box<[u8]>;
-    fn parse(mut self, mut buffer: impl Buffer) -> Result<Self::Output, Self> {
+    fn parse(mut self, mut buffer: impl Buffer) -> ParseResult<Self> {
         // keep taking bytes until the complete
         while self.bytes.len() < self.bytes.capacity() {
             // if bytes are exhausted, return incomplete
             let Some(byte) = buffer.take_byte() else {
-                return Err(self);
+                return Err(ParseError::Incomplete(self));
             };
 
             // otherwise append the bytes to the vec
@@ -171,13 +205,13 @@ where
 {
     type Output = Out;
 
-    fn parse(mut self, buffer: impl Buffer) -> Result<Self::Output, Self> {
+    fn parse(self, buffer: impl Buffer) -> ParseResult<Self> {
         match self.parser.parse(buffer) {
             Ok(out) => Ok((self.map)(out)),
-            Err(parser) => {
-                self.parser = parser;
-                Err(self)
-            }
+            Err(err) => Err(err.map(|parser| Self {
+                map: self.map,
+                parser,
+            })),
         }
     }
 }
@@ -212,19 +246,25 @@ where
 {
     type Output = P2::Output;
 
-    fn parse(mut self, buffer: impl Buffer) -> Result<Self::Output, Self> {
+    fn parse(mut self, buffer: impl Buffer) -> ParseResult<Self> {
         self.state = match self.state {
             ThenState::First(first) => match first.parse(buffer) {
                 Ok(second) => ThenState::Second(second),
-                Err(first) => ThenState::First(first),
+                Err(err) => match err {
+                    ParseError::Incomplete(first) => ThenState::First(first),
+                    ParseError::InvalidBytes => return Err(ParseError::InvalidBytes),
+                },
             },
             ThenState::Second(second) => match second.parse(buffer) {
-                Err(second) => ThenState::Second(second),
                 Ok(out) => return Ok(out),
+                Err(err) => match err {
+                    ParseError::Incomplete(second) => ThenState::Second(second),
+                    ParseError::InvalidBytes => return Err(ParseError::InvalidBytes),
+                },
             },
         };
 
-        Err(self)
+        Err(ParseError::Incomplete(self))
     }
 }
 
@@ -241,4 +281,31 @@ pub trait ThenExt: Parser {
     }
 }
 
-pub struct OpSwitch {}
+pub struct Some<P> {
+    parser: P,
+}
+
+impl<T, P> Parser for Some<P>
+where
+    P: Parser<Output = Option<T>>,
+{
+    type Output = T;
+
+    fn parse(self, buffer: impl Buffer) -> ParseResult<Self> {
+        match self.parser.parse(buffer) {
+            Ok(Some(out)) => Ok(out),
+            Ok(None) => Err(ParseError::InvalidBytes),
+            Err(err) => Err(err.map(|parser| Self { parser })),
+        }
+    }
+}
+
+impl<T, P: Parser<Output = Option<T>>> OptionExt for P {}
+pub trait OptionExt: Parser {
+    fn some<T>(self) -> Some<Self>
+    where
+        Self: Parser<Output = Option<T>>,
+    {
+        Some { parser: self }
+    }
+}

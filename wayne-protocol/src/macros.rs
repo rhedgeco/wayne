@@ -1,3 +1,4 @@
+// re-export macro impls as hidden
 #[doc(hidden)]
 pub mod __impl {
     pub use wayne_protocol_macros::protocol;

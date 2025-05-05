@@ -196,7 +196,7 @@ impl ToTokens for Data<&Arg> {
         };
 
         let mut arg_ty = match self.0.ty {
-            ArgType::Fixed => quote! { __protocol::types::Fixed },
+            ArgType::Fixed => quote! { f32 },
             ArgType::String => quote! { String },
             ArgType::Array => quote! { Box<[u8]> },
             ArgType::Fd => quote! { ::std::os::fd::OwnedFd },

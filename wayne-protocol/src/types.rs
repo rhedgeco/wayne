@@ -2,57 +2,6 @@ use std::marker::PhantomData;
 
 use derivative::Derivative;
 use derive_more::Display;
-use fixed::types::I24F8;
-
-#[repr(transparent)]
-#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Fixed(I24F8);
-
-impl Into<f32> for Fixed {
-    fn into(self) -> f32 {
-        self.to_f32()
-    }
-}
-
-impl From<f32> for Fixed {
-    fn from(value: f32) -> Self {
-        Self::from_f32(value)
-    }
-}
-
-impl Into<f64> for Fixed {
-    fn into(self) -> f64 {
-        self.to_f64()
-    }
-}
-
-impl From<f64> for Fixed {
-    fn from(value: f64) -> Self {
-        Self::from_f64(value)
-    }
-}
-
-impl Fixed {
-    pub fn to_f32(self) -> f32 {
-        self.0.to_num()
-    }
-
-    pub fn to_f64(self) -> f64 {
-        self.0.to_num()
-    }
-
-    pub fn from_f32(value: f32) -> Self {
-        Self(I24F8::from_num(value))
-    }
-
-    pub fn from_f64(value: f64) -> Self {
-        Self(I24F8::from_num(value))
-    }
-
-    pub const fn from_raw(value: i32) -> Self {
-        Self(I24F8::from_bits(value))
-    }
-}
 
 #[repr(transparent)]
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

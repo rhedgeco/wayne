@@ -1,37 +1,27 @@
 use std::os::fd::OwnedFd;
 
-use crate::types::{Fixed, RawId};
+use fixed::types::I24F8;
 
-#[allow(unused_variables)]
-pub trait Parser: Sized {
-    type Output;
-    fn parse(self, byte: u8) -> Result<Self::Output, Self>;
-}
-
-pub fn sink(count: usize) -> Sink {
-    Sink { count }
-}
-
-pub fn bytes(len: usize) -> Bytes {
-    Bytes {
-        bytes: Vec::with_capacity(len),
-    }
-}
+use crate::types::{NewId, ObjId, RawId};
 
 pub fn i32() -> impl Parser<Output = i32> {
-    bytes(4).map(|b| i32::from_ne_bytes([b[0], b[1], b[2], b[4]]))
+    Bytes::new(4).map(|b| i32::from_ne_bytes([b[0], b[1], b[2], b[4]]))
 }
 
 pub fn u32() -> impl Parser<Output = u32> {
-    bytes(4).map(|b| u32::from_ne_bytes([b[0], b[1], b[2], b[4]]))
+    Bytes::new(4).map(|b| u32::from_ne_bytes([b[0], b[1], b[2], b[4]]))
 }
 
-pub fn fixed() -> impl Parser<Output = Fixed> {
-    i32().map(|value| Fixed::from_raw(value))
+pub fn f32() -> impl Parser<Output = f32> {
+    i32().map(|value| I24F8::from_bits(value).to_num())
 }
 
-pub fn raw_id() -> impl Parser<Output = RawId> {
-    u32().map(|value| RawId::from_value(value))
+pub fn obj_id<T>() -> impl Parser<Output = ObjId<T>> {
+    u32().map(|value| RawId::from_value(value).to_obj())
+}
+
+pub fn new_id<T>() -> impl Parser<Output = NewId<T>> {
+    u32().map(|value| RawId::from_value(value).to_new())
 }
 
 pub fn array() -> impl Parser<Output = Box<[u8]>> {
@@ -42,7 +32,7 @@ pub fn array() -> impl Parser<Output = Box<[u8]>> {
     u32()
         .then(|len| {
             // parse the array bytes
-            bytes(len as usize)
+            Bytes::new(len as usize)
         })
         .then(|bytes| {
             // find the remaining padding required
@@ -50,7 +40,7 @@ pub fn array() -> impl Parser<Output = Box<[u8]>> {
             let remaining = padded_len - bytes.len();
 
             // the consume the padding and return the original array
-            sink(remaining).map(|_| bytes)
+            Consume::new(remaining, 0).map(|_| bytes)
         })
 }
 
@@ -59,19 +49,82 @@ pub fn string() -> impl Parser<Output = String> {
     array().map(|bytes| String::from_utf8_lossy(&bytes).to_string())
 }
 
-pub struct Sink {
-    count: usize,
+pub fn fd() -> impl Parser<Output = OwnedFd> {
+    Fd::new()
 }
 
-impl Parser for Sink {
-    type Output = usize;
-    fn parse(mut self, _: u8) -> Result<Self::Output, Self> {
-        self.count -= 1;
-        if self.count == 0 {
-            return Ok(self.count);
+pub trait Buffer {
+    fn take_byte(&mut self) -> Option<u8>;
+    fn take_fd(&mut self) -> Option<OwnedFd>;
+}
+
+impl<T: Buffer> Buffer for &mut T {
+    fn take_byte(&mut self) -> Option<u8> {
+        T::take_byte(self)
+    }
+
+    fn take_fd(&mut self) -> Option<OwnedFd> {
+        T::take_fd(self)
+    }
+}
+
+pub trait Parser: Sized {
+    type Output;
+    fn parse(self, buffer: impl Buffer) -> Result<Self::Output, Self>;
+}
+
+pub struct Fd(());
+
+impl Fd {
+    pub fn new() -> Self {
+        Self(())
+    }
+}
+
+impl Parser for Fd {
+    type Output = OwnedFd;
+
+    fn parse(self, mut buffer: impl Buffer) -> Result<Self::Output, Self> {
+        match buffer.take_fd() {
+            Some(fd) => Ok(fd),
+            None => Err(self),
+        }
+    }
+}
+
+pub struct Consume {
+    bytes: usize,
+    fds: usize,
+}
+
+impl Consume {
+    pub fn new(bytes: usize, fds: usize) -> Self {
+        Self { bytes, fds }
+    }
+}
+
+impl Parser for Consume {
+    type Output = (usize, usize);
+    fn parse(mut self, mut buffer: impl Buffer) -> Result<Self::Output, Self> {
+        // consume bytes until complete
+        while self.bytes > 0 {
+            if buffer.take_byte().is_none() {
+                return Err(self);
+            };
+
+            self.bytes -= 1;
         }
 
-        Err(self)
+        // consume fds until complete
+        while self.fds > 0 {
+            if buffer.take_fd().is_none() {
+                return Err(self);
+            };
+
+            self.fds -= 1;
+        }
+
+        Ok((self.bytes, self.fds))
     }
 }
 
@@ -79,16 +132,30 @@ pub struct Bytes {
     bytes: Vec<u8>,
 }
 
+impl Bytes {
+    pub fn new(size: usize) -> Self {
+        Self {
+            bytes: Vec::with_capacity(size),
+        }
+    }
+}
+
 impl Parser for Bytes {
     type Output = Box<[u8]>;
+    fn parse(mut self, mut buffer: impl Buffer) -> Result<Self::Output, Self> {
+        // keep taking bytes until the complete
+        while self.bytes.len() < self.bytes.capacity() {
+            // if bytes are exhausted, return incomplete
+            let Some(byte) = buffer.take_byte() else {
+                return Err(self);
+            };
 
-    fn parse(mut self, byte: u8) -> Result<Self::Output, Self> {
-        self.bytes.push(byte);
-        if self.bytes.len() == self.bytes.capacity() {
-            return Ok(self.bytes.into_boxed_slice());
+            // otherwise append the bytes to the vec
+            self.bytes.push(byte);
         }
 
-        Err(self)
+        // if all bytes were captured, return the bytes
+        Ok(self.bytes.into_boxed_slice())
     }
 }
 
@@ -97,15 +164,15 @@ pub struct Map<P, F> {
     map: F,
 }
 
-impl<P, F, O> Parser for Map<P, F>
+impl<P, F, Out> Parser for Map<P, F>
 where
     P: Parser,
-    F: FnOnce(P::Output) -> O,
+    F: FnOnce(P::Output) -> Out,
 {
-    type Output = O;
+    type Output = Out;
 
-    fn parse(mut self, byte: u8) -> Result<Self::Output, Self> {
-        match self.parser.parse(byte) {
+    fn parse(mut self, buffer: impl Buffer) -> Result<Self::Output, Self> {
+        match self.parser.parse(buffer) {
             Ok(out) => Ok((self.map)(out)),
             Err(parser) => {
                 self.parser = parser;
@@ -145,13 +212,13 @@ where
 {
     type Output = P2::Output;
 
-    fn parse(mut self, byte: u8) -> Result<Self::Output, Self> {
+    fn parse(mut self, buffer: impl Buffer) -> Result<Self::Output, Self> {
         self.state = match self.state {
-            ThenState::First(first) => match first.parse(byte) {
+            ThenState::First(first) => match first.parse(buffer) {
                 Ok(second) => ThenState::Second(second),
                 Err(first) => ThenState::First(first),
             },
-            ThenState::Second(second) => match second.parse(byte) {
+            ThenState::Second(second) => match second.parse(buffer) {
                 Err(second) => ThenState::Second(second),
                 Ok(out) => return Ok(out),
             },
@@ -174,83 +241,4 @@ pub trait ThenExt: Parser {
     }
 }
 
-pub trait Buffer {
-    fn take_byte(&mut self) -> Option<u8>;
-    fn take_fd(&mut self) -> Option<OwnedFd>;
-}
-
-impl<T: Buffer> Buffer for &mut T {
-    fn take_byte(&mut self) -> Option<u8> {
-        T::take_byte(self)
-    }
-
-    fn take_fd(&mut self) -> Option<OwnedFd> {
-        T::take_fd(self)
-    }
-}
-
-enum BuildState<P: Parser> {
-    Output(P::Output),
-    Parser(P),
-}
-
-pub struct Builder<P: Parser, F> {
-    state: BuildState<P>,
-    fds: Vec<OwnedFd>,
-    map: F,
-}
-
-impl<P, F, O> Builder<P, F>
-where
-    P: Parser,
-    F: FnOnce(P::Output, Box<[OwnedFd]>) -> O,
-{
-    pub fn build(mut self, mut buffer: impl Buffer) -> Result<O, Self> {
-        let out = match self.state {
-            BuildState::Output(out) => out,
-            // keep taking bytes until parsing is complete
-            BuildState::Parser(mut parser) => loop {
-                // if we run out of bytes, just return incomplete
-                let Some(byte) = buffer.take_byte() else {
-                    self.state = BuildState::Parser(parser);
-                    return Err(self);
-                };
-
-                // otherwise parse the next byte
-                match parser.parse(byte) {
-                    Err(p) => parser = p,
-                    Ok(out) => break out,
-                }
-            },
-        };
-
-        // keep taking file descriptors until complete
-        while self.fds.len() < self.fds.capacity() {
-            // if we run out of fds, just return incomplete
-            let Some(fd) = buffer.take_fd() else {
-                self.state = BuildState::Output(out);
-                return Err(self);
-            };
-
-            // othwerwise store the received file descriptor
-            self.fds.push(fd);
-        }
-
-        // if we are finished parsing, and we have all file descriptors, then the builder is complete
-        Ok((self.map)(out, self.fds.into_boxed_slice()))
-    }
-}
-
-impl<P: Parser> BuilderExt for P {}
-pub trait BuilderExt: Parser {
-    fn builder<F>(self, fds: usize, f: F) -> Builder<Self, F>
-    where
-        F: FnOnce(Self::Output, Box<[OwnedFd]>),
-    {
-        Builder {
-            state: BuildState::Parser(self),
-            fds: Vec::with_capacity(fds),
-            map: f,
-        }
-    }
-}
+pub struct OpSwitch {}

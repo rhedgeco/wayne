@@ -63,12 +63,12 @@ pub struct Arg {
     pub interface: Option<String>,
     #[serde(rename = "@enum")]
     pub enum_kind: Option<String>,
-    #[serde(
-        default,
-        rename = "@allow-null",
-        deserialize_with = "utils::parse_bool"
-    )]
-    pub allow_null: bool,
+    // #[serde(
+    //     default,
+    //     rename = "@allow-null",
+    //     deserialize_with = "utils::parse_bool"
+    // )]
+    // pub allow_null: bool,
     #[serde(rename = "@summary")]
     pub summary: String,
 }
@@ -119,13 +119,13 @@ pub struct Entry {
 mod utils {
     use serde::{Deserialize, Deserializer};
 
-    pub fn parse_bool<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
-        let string = String::deserialize(deserializer)?;
-        match string.as_str() {
-            "true" => Ok(true),
-            _ => Ok(false),
-        }
-    }
+    // pub fn parse_bool<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    //     let string = String::deserialize(deserializer)?;
+    //     match string.as_str() {
+    //         "true" => Ok(true),
+    //         _ => Ok(false),
+    //     }
+    // }
 
     pub fn parse_hex<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
         let string = String::deserialize(deserializer)?;

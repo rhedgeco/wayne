@@ -1,5 +1,4 @@
 mod bytes;
-mod pad;
 mod stash;
 
 pub use stash::Stash;

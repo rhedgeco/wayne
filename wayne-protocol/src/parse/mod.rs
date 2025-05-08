@@ -1,7 +1,7 @@
+mod builder;
 mod bytes;
-mod stash;
 
-pub use stash::Stash;
+pub use builder::Builder;
 
 pub mod int;
 pub const fn int() -> int::Parser {

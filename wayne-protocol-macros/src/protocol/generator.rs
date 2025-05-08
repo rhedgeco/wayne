@@ -48,7 +48,7 @@ impl ToTokens for Generator {
                 #[allow(unused_imports)]
                 use #protocol_path::{
                     Buffer, Parser,
-                    parse::{Stash, array, fd, fixed, int, raw_id, string, uint},
+                    parse::{Builder, array, fd, fixed, int, raw_id, string, uint},
                     parser::ParseResult,
                     types::{RawEnum, ObjId, NewId},
                 };
@@ -215,13 +215,13 @@ impl ToTokens for Parser<&Request> {
 
         tokens.extend(quote! {
             pub struct #parser {
-                #(#arg_name: Stash<#arg_ty::Parser>,)*
+                #(#arg_name: Builder<#arg_ty::Parser>,)*
             }
 
             impl #parser {
                 pub fn new() -> Self {
                     Self {
-                        #(#arg_name: Stash::new(#arg_ty()),)*
+                        #(#arg_name: Builder::new(#arg_ty()),)*
                     }
                 }
             }
@@ -237,7 +237,7 @@ impl ToTokens for Parser<&Request> {
                     #(self.#arg_name.parse(&mut bytes, &mut fds)?;)*
 
                     Ok(#ident {
-                        #(#arg_name: self.#arg_name.take().into(),)*
+                        #(#arg_name: self.#arg_name.finish()?.into(),)*
                     })
                 }
             }

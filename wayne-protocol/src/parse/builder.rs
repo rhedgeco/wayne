@@ -1,13 +1,16 @@
 use std::os::unix::prelude::OwnedFd;
 
-use crate::{Buffer, Parser, parser::ParseResult};
+use crate::{
+    Buffer, Parser,
+    parser::{ParseError, ParseResult},
+};
 
-pub struct Stash<P: Parser> {
+pub struct Builder<P: Parser> {
     stash: Option<P::Output>,
     parser: P,
 }
 
-impl<P: Parser> Stash<P> {
+impl<P: Parser> Builder<P> {
     pub const fn new(parser: P) -> Self {
         Self {
             stash: None,
@@ -15,14 +18,12 @@ impl<P: Parser> Stash<P> {
         }
     }
 
-    pub fn take(&mut self) -> P::Output {
-        self.stash
-            .take()
-            .expect("stash must be parsed before calling take")
+    pub fn finish(&mut self) -> ParseResult<P> {
+        self.stash.take().ok_or(ParseError::Failed)
     }
 }
 
-impl<P: Parser> Parser for Stash<P> {
+impl<P: Parser> Parser for Builder<P> {
     type Output = ();
 
     fn parse(&mut self, bytes: impl Buffer<u8>, fds: impl Buffer<OwnedFd>) -> ParseResult<Self> {

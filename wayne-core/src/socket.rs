@@ -72,10 +72,10 @@ impl WaylandSocket {
         // try binding a range of wayland socket locations
         for index in 0..max {
             let name = format!("wayland-{index}");
-            log::debug!("Trying to bind wayland socket '{name}'");
+            log::debug!("Trying to bind Wayland Socket: '{name}'");
             return match bind_name(name) {
                 Ok(socket) => {
-                    log::debug!("Wayland socket '{}' connected!", socket.name());
+                    log::debug!("Wayland Socket activated: '{}'", socket.name());
                     Ok(socket)
                 }
                 Err(e) => match e.kind() {

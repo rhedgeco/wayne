@@ -104,6 +104,10 @@ impl ToTokens for Type<&Interface> {
             let item = utils::ident(format!("{name}Parser"));
             quote! { Self::#variant(#item::new()) }
         });
+        let parser_parse = self.0.requests.iter().map(|request| {
+            let variant = utils::ident(request.name.to_case(Case::Pascal));
+            quote! { Self::#variant(parser) => Ok(#request_enum::#variant(parser.parse(bytes, fds)?)) }
+        });
 
         let request_parsers = self.0.requests.iter().map(Parser);
 
@@ -153,6 +157,17 @@ impl ToTokens for Type<&Interface> {
                         match opcode {
                             #(#opcodes => Some(#parser_init),)*
                             _ => None,
+                        }
+                    }
+                }
+
+                impl Parser for #parser_enum {
+                    type Output = #request_enum;
+
+                    fn parse(&mut self, bytes: impl Buffer<u8>, fds: impl Buffer<OwnedFd>) -> ParseResult<Self> {
+                        match self {
+                            #(#parser_parse,)*
+                            _ => unreachable!(),
                         }
                     }
                 }

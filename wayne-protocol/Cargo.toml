@@ -9,3 +9,4 @@ derive_more = { version = "2.0", features = ["display"] }
 fixed = "1.29"
 thiserror = "2.0"
 wayne-protocol-macros.workspace = true
+log = "0.4"

@@ -38,7 +38,7 @@ impl ToTokens for Generator {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let protocol_path = &self.protocol_path;
         let ident = utils::ident(&self.protocol.name);
-        let interface_data = self.protocol.interfaces.iter().map(Data);
+        let interface_types = self.protocol.interfaces.iter().map(Type);
         tokens.extend(quote! {
             pub mod #ident {
                 #[allow(unused_imports)]
@@ -47,64 +47,65 @@ impl ToTokens for Generator {
                 // re-export useful protocol items
                 #[allow(unused_imports)]
                 use #protocol_path::{
-                    parse::{self, MapExt, OptionExt, ParseResult, Parser, Pass, ThenExt},
-                    types::{ObjId, NewId},
+                    Buffer, Parser,
+                    parse::{Stash, array, fd, fixed, int, raw_id, string, uint},
+                    parser::ParseResult,
+                    types::{RawEnum, ObjId, NewId},
                 };
 
-                #(#interface_data)*
+                #(#interface_types)*
             }
         });
     }
 }
 
-struct Data<T>(T);
+struct Type<T>(T);
+struct Parser<T>(T);
 
-impl ToTokens for Data<&Interface> {
+impl ToTokens for Type<&Interface> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let version = self.0.version;
         let mod_ident = utils::ident(&self.0.name);
-        let request_data = self.0.requests.iter().map(Data);
-        let event_data = self.0.events.iter().map(Data);
-        let enum_data = self.0.enums.iter().map(Data);
+        let request_types = self.0.requests.iter().map(Type);
+        let event_types = self.0.events.iter().map(Type);
+        let enum_types = self.0.enums.iter().map(Type);
         let docs = self.0.description.lines();
 
         let pascal_name = self.0.name.to_case(Case::Pascal);
         let main_enum = utils::ident(&pascal_name);
 
         let request_enum = utils::ident(&format!("{pascal_name}Request"));
-        let request_iter = self.0.requests.iter();
-        let request_variants = request_iter
-            .clone()
-            .map(|request| utils::ident(request.name.to_case(Case::Pascal)))
-            .collect::<Box<[_]>>();
-        let request_items = request_iter
-            .clone()
-            .map(|request| {
-                let name = request.name.to_case(Case::Pascal);
-                utils::ident(&format!("{name}Request"))
-            })
-            .collect::<Box<[_]>>();
-
-        let parser = utils::ident(&format!("{pascal_name}Parser"));
-        let opcodes = (0..(self.0.requests.len() as u16)).collect::<Box<[_]>>();
-        let parser_generics = opcodes
-            .iter()
-            .map(|i| utils::ident(&format!("P{i}")))
-            .collect::<Box<[_]>>();
+        let request_variants = self.0.requests.iter().map(|request| {
+            let name = request.name.to_case(Case::Pascal);
+            let variant = utils::ident(&name);
+            let item = utils::ident(format!("{name}Request"));
+            quote! { #variant(#item) }
+        });
 
         let event_enum = utils::ident(format!("{pascal_name}Event"));
-        let event_iter = self.0.events.iter();
-        let event_variants = event_iter
-            .clone()
-            .map(|event| utils::ident(event.name.to_case(Case::Pascal)))
-            .collect::<Box<[_]>>();
-        let event_items = event_iter
-            .clone()
-            .map(|event| {
-                let name = event.name.to_case(Case::Pascal);
-                utils::ident(&format!("{name}Event"))
-            })
-            .collect::<Box<[_]>>();
+        let event_variants = self.0.events.iter().map(|event| {
+            let name = event.name.to_case(Case::Pascal);
+            let variant = utils::ident(&name);
+            let item = utils::ident(format!("{name}Event"));
+            quote! { #variant(#item) }
+        });
+
+        let opcodes = 0..(self.0.requests.len() as u16);
+        let parser_enum = utils::ident(&format!("{pascal_name}Parser"));
+        let parser_variants = self.0.requests.iter().map(|request| {
+            let name = request.name.to_case(Case::Pascal);
+            let variant = utils::ident(&name);
+            let item = utils::ident(format!("{name}Parser"));
+            quote! { #variant(#item) }
+        });
+        let parser_init = self.0.requests.iter().map(|request| {
+            let name = request.name.to_case(Case::Pascal);
+            let variant = utils::ident(&name);
+            let item = utils::ident(format!("{name}Parser"));
+            quote! { Self::#variant(#item::new()) }
+        });
+
+        let request_parsers = self.0.requests.iter().map(Parser);
 
         tokens.extend(quote! {
             pub use #mod_ident::#main_enum;
@@ -123,129 +124,129 @@ impl ToTokens for Data<&Interface> {
 
                 #[derive(Debug)]
                 pub enum #request_enum {
-                    #(#request_variants(#request_items),)*
+                    #(#request_variants,)*
                 }
 
                 impl #request_enum {
-                    pub fn parser(opcode: u16) -> Option<#parser<#(
-                        impl Parser<Output = #request_items>,
-                    )*>> {
+                    pub fn parser(opcode: u16) -> Option<#parser_enum> {
+                        #parser_enum::new(opcode)
+                    }
+                }
+
+                #(#request_types)*
+
+                #[derive(Debug)]
+                pub enum #event_enum {
+                    #(#event_variants,)*
+                }
+
+                #(#event_types)*
+
+                #(#enum_types)*
+
+                pub enum #parser_enum {
+                    #(#parser_variants,)*
+                }
+
+                impl #parser_enum {
+                    pub fn new(opcode: u16) -> Option<Self> {
                         match opcode {
-                            #(#opcodes => Some(#parser::#request_variants(#request_items::parser())),)*
+                            #(#opcodes => Some(#parser_init),)*
                             _ => None,
                         }
                     }
                 }
 
-                pub enum #parser<#(#parser_generics,)*>
-                where #(#parser_generics: Parser<Output = #request_items>,)*
-                {
-                    #(#request_variants(#parser_generics),)*
-                }
+                #(#request_parsers)*
+            }
+        });
+    }
+}
 
-                impl<#(#parser_generics,)*> Parser for #parser<#(#parser_generics,)*>
-                where #(#parser_generics: Parser<Output = #request_items>,)*
-                {
-                    type Output = #request_enum;
-                    fn parse(self, buffer: impl parse::Buffer) -> ParseResult<Self> {
-                        match self {
-                            #(
-                                #parser::#request_variants(parser) => parser
-                                    .parse(buffer)
-                                    .map(|request| Self::Output::#request_variants(request))
-                                    .map_err(|err| err.map(|parser| Self::#request_variants(parser))),
-                            )*
-                        }
+impl ToTokens for Type<&Request> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let docs = self.0.description.lines();
+        let name = self.0.name.to_case(Case::Pascal);
+        let ident = utils::ident(format!("{name}Request"));
+        let args = self.0.args.iter().map(Type);
+
+        tokens.extend(quote! {
+            #(#[doc = #docs])*
+            #[derive(Debug)]
+            pub struct #ident {
+                #(#args)*
+            }
+        });
+    }
+}
+
+impl ToTokens for Parser<&Request> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let name = self.0.name.to_case(Case::Pascal);
+        let ident = utils::ident(format!("{name}Request"));
+        let parser = utils::ident(format!("{name}Parser"));
+        let arg_ty = self
+            .0
+            .args
+            .iter()
+            .map(|arg| Parser(&arg.ty))
+            .collect::<Box<[_]>>();
+        let arg_name = self
+            .0
+            .args
+            .iter()
+            .map(|arg| utils::ident(&arg.name))
+            .collect::<Box<[_]>>();
+
+        tokens.extend(quote! {
+            pub struct #parser {
+                #(#arg_name: Stash<#arg_ty::Parser>,)*
+            }
+
+            impl #parser {
+                pub fn new() -> Self {
+                    Self {
+                        #(#arg_name: Stash::new(#arg_ty()),)*
                     }
                 }
-
-                #[derive(Debug)]
-                pub enum #event_enum {
-                    #(#event_variants(#event_items),)*
-                }
-
-                #(#request_data)*
-                #(#event_data)*
-                #(#enum_data)*
-            }
-        });
-    }
-}
-
-impl ToTokens for Data<&Request> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let ident = utils::ident(format!("{}Request", self.0.name.to_case(Case::Pascal)));
-        let args = self.0.args.iter().map(Data);
-        let docs = self.0.description.lines();
-
-        let arg_parser = self.0.args.iter().rev().fold(
-            {
-                let names = self.0.args.iter().map(|arg| utils::ident(&arg.name));
-                quote! {
-                    Pass::new(Self {
-                        #(#names,)*
-                    })
-                }
-            },
-            |child, arg| {
-                let name = utils::ident(&arg.name);
-                let ty = match &arg.ty {
-                    ArgType::Int => utils::ident("i32"),
-                    ArgType::Uint => utils::ident("u32"),
-                    ArgType::Fixed => utils::ident("f32"),
-                    ArgType::String => utils::ident("string"),
-                    ArgType::Object => utils::ident("obj_id"),
-                    ArgType::NewId => utils::ident("new_id"),
-                    ArgType::Array => utils::ident("array"),
-                    ArgType::Fd => utils::ident("fd"),
-                };
-
-                let mapper = arg.enum_kind.as_ref().map(|kind| {
-                    let kind = utils::enum_kind(kind);
-                    quote! {.map(|v| #kind::parse(v as u32)).some()}
-                });
-
-                quote! {
-                    parse::#ty()#mapper.then(move |#name| {
-                        #child
-                    })
-                }
-            },
-        );
-
-        tokens.extend(quote! {
-            #(#[doc = #docs])*
-            #[derive(Debug)]
-            pub struct #ident {
-                #(#args,)*
             }
 
-            impl #ident {
-                pub fn parser() -> impl Parser<Output = Self> {
-                    #arg_parser
+            impl Parser for #parser {
+                type Output = #ident;
+
+                fn parse(
+                    &mut self,
+                    mut bytes: impl Buffer<u8>,
+                    mut fds: impl Buffer<OwnedFd>,
+                ) -> ParseResult<Self> {
+                    #(self.#arg_name.parse(&mut bytes, &mut fds)?;)*
+
+                    Ok(#ident {
+                        #(#arg_name: self.#arg_name.take().into(),)*
+                    })
                 }
             }
         });
     }
 }
 
-impl ToTokens for Data<&Event> {
+impl ToTokens for Type<&Event> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let ident = utils::ident(format!("{}Event", self.0.name.to_case(Case::Pascal)));
-        let args = self.0.args.iter().map(Data);
+        let type_args = self.0.args.iter().map(Type);
         let docs = self.0.description.lines();
 
         tokens.extend(quote! {
             #(#[doc = #docs])*
             #[derive(Debug)]
             pub struct #ident {
-                #(#args,)*
+                #(#type_args)*
             }
         });
     }
 }
 
-impl ToTokens for Data<&Enum> {
+impl ToTokens for Type<&Enum> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let ident = utils::ident(self.0.name.to_case(Case::Pascal));
         let docs = self.0.description.lines();
@@ -269,46 +270,66 @@ impl ToTokens for Data<&Enum> {
                 )*
             }
 
-            impl #ident {
-                pub fn parse(value: u32) -> Option<Self> {
-                    match value {
-                        #(
-                            #entry_values => Some(Self::#entry_names),
-                        )*
-                        _ => None,
-                    }
+            impl TryFrom<u32> for #ident {
+                type Error = ();
+                fn try_from(value: u32) -> Result<Self, Self::Error> {
+                    Ok(match value {
+                        #(#entry_values => Self::#entry_names,)*
+                        _ => return Err(()),
+                    })
                 }
             }
         });
     }
 }
 
-impl ToTokens for Data<&Arg> {
+impl ToTokens for Type<&Arg> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let docs = &self.0.summary;
         let ident = utils::ident(&self.0.name);
-        let enum_kind = self.0.enum_kind.as_ref().map(utils::enum_kind);
 
         let interface = match &self.0.interface {
-            Some(interface) => utils::ident(interface.to_case(Case::Pascal)).into_token_stream(),
+            Some(i) => utils::ident(i.to_case(Case::Pascal)).into_token_stream(),
             None => quote! { () },
         };
 
-        let arg_ty = match self.0.ty {
+        let mut arg_ty = match &self.0.ty {
+            ArgType::Int => quote! { i32 },
+            ArgType::Uint => quote! { u32 },
             ArgType::Fixed => quote! { f32 },
             ArgType::String => quote! { String },
             ArgType::Array => quote! { Box<[u8]> },
             ArgType::Fd => quote! { OwnedFd },
             ArgType::Object => quote! { ObjId<#interface> },
             ArgType::NewId => quote! { NewId<#interface> },
-            ArgType::Int => enum_kind.unwrap_or_else(|| quote! { i32 }),
-            ArgType::Uint => enum_kind.unwrap_or_else(|| quote! { u32 }),
         };
+
+        if let Some(kind) = &self.0.enum_kind {
+            let kind = utils::enum_kind(kind);
+            arg_ty = quote! { RawEnum<#arg_ty, #kind> };
+        }
 
         tokens.extend(quote! {
             #[doc = #docs]
-            #ident: #arg_ty
+            #ident: #arg_ty,
         });
+    }
+}
+
+impl ToTokens for Parser<&ArgType> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let ty = match &self.0 {
+            ArgType::Int => utils::ident("int"),
+            ArgType::Uint => utils::ident("uint"),
+            ArgType::Fixed => utils::ident("fixed"),
+            ArgType::String => utils::ident("string"),
+            ArgType::Object => utils::ident("raw_id"),
+            ArgType::NewId => utils::ident("raw_id"),
+            ArgType::Array => utils::ident("array"),
+            ArgType::Fd => utils::ident("fd"),
+        };
+
+        tokens.extend(quote! { #ty })
     }
 }
 

@@ -20,7 +20,7 @@ pub struct IterBuf<'a, I> {
     inner: &'a mut I,
 }
 
-impl<'a, I, T> Buffer<T> for IterBuf<'a, I>
+impl<I, T> Buffer<T> for IterBuf<'_, I>
 where
     I: Iterator<Item = T>,
 {

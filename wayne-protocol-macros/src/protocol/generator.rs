@@ -51,10 +51,10 @@ impl ToTokens for Generator {
                     parser::Builder,
                     types::{
                         RawEnum, RawString,
-                        RawId, id::{ObjId, NewId},
+                        id::{NewId, CustomNewId, ObjectId},
                     },
                     parse::{
-                        int, uint, float, string, id, array, fd,
+                        int, uint, float, string, custom, array, fd,
                     },
                 };
 
@@ -213,8 +213,21 @@ impl ToTokens for Parser<&Request> {
             .0
             .args
             .iter()
-            .map(|arg| Parser(&arg.ty))
+            .map(|arg| match &arg.ty {
+                ArgType::Int => utils::ident("int"),
+                ArgType::Uint => utils::ident("uint"),
+                ArgType::Fixed => utils::ident("float"),
+                ArgType::String => utils::ident("string"),
+                ArgType::Object => utils::ident("uint"),
+                ArgType::Array => utils::ident("array"),
+                ArgType::Fd => utils::ident("fd"),
+                ArgType::NewId => match &arg.interface {
+                    Some(_) => utils::ident("uint"),
+                    None => utils::ident("custom"),
+                },
+            })
             .collect::<Box<[_]>>();
+
         let arg_name = self
             .0
             .args
@@ -312,10 +325,11 @@ impl ToTokens for Type<&Arg> {
         let docs = &self.0.summary;
         let ident = utils::ident(&self.0.name);
 
-        let interface = match &self.0.interface {
-            Some(i) => utils::ident(i.to_case(Case::Pascal)).into_token_stream(),
-            None => quote! { () },
-        };
+        let interface = self
+            .0
+            .interface
+            .as_ref()
+            .map(|i| utils::ident(i.to_case(Case::Pascal)));
 
         let mut arg_ty = match &self.0.ty {
             ArgType::Int => quote! { i32 },
@@ -324,8 +338,14 @@ impl ToTokens for Type<&Arg> {
             ArgType::String => quote! { RawString },
             ArgType::Array => quote! { Box<[u8]> },
             ArgType::Fd => quote! { OwnedFd },
-            ArgType::Object => quote! { ObjId<#interface> },
-            ArgType::NewId => quote! { NewId<#interface> },
+            ArgType::Object => match &interface {
+                Some(interface) => quote! { ObjectId<#interface> },
+                None => quote! { ObjectId<()> },
+            },
+            ArgType::NewId => match &interface {
+                Some(interface) => quote! { NewId<#interface> },
+                None => quote! { CustomNewId },
+            },
         };
 
         if let Some(kind) = &self.0.enum_kind {
@@ -357,8 +377,8 @@ impl ToTokens for Parser<&ArgType> {
             ArgType::Uint => utils::ident("uint"),
             ArgType::Fixed => utils::ident("float"),
             ArgType::String => utils::ident("string"),
-            ArgType::Object => utils::ident("id"),
-            ArgType::NewId => utils::ident("id"),
+            ArgType::Object => utils::ident("uint"),
+            ArgType::NewId => utils::ident("uint"),
             ArgType::Array => utils::ident("array"),
             ArgType::Fd => utils::ident("fd"),
         };

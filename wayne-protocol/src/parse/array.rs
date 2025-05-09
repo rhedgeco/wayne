@@ -2,10 +2,10 @@ use std::os::fd::OwnedFd;
 
 use crate::{Buffer, parser::Builder};
 
-use super::{bytes, uint};
+use super::{uint, utils};
 
 pub struct Parser {
-    bytes: Option<Builder<bytes::Parser>>,
+    bytes: Option<Builder<utils::VecParser>>,
     len: uint::Parser,
     padding: u32,
 }
@@ -35,7 +35,7 @@ impl crate::Parser for Parser {
                 // if there was none, build the length and padding
                 let len = self.len.parse(&mut bytes, &mut fds)?;
                 self.padding = ((len + 3) & !3) - len;
-                Builder::new(bytes::Parser::new(len as usize))
+                Builder::new(utils::VecParser::new(len as usize))
             }
         };
 
@@ -56,6 +56,6 @@ impl crate::Parser for Parser {
         }
 
         // then consume and return the bytes
-        builder.finish()
+        Some(builder.finish()?.into_boxed_slice())
     }
 }

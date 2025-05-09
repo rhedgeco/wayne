@@ -1,5 +1,6 @@
+mod utils;
+
 pub mod array;
-pub mod bytes;
 pub mod fd;
 pub mod float;
 pub mod id;

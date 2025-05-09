@@ -2,19 +2,19 @@ use std::{mem::MaybeUninit, os::fd::OwnedFd};
 
 use crate::Buffer;
 
-pub struct Parser {
+pub struct VecParser {
     vec: Option<Vec<u8>>,
     len: usize,
 }
 
-impl Parser {
+impl VecParser {
     pub const fn new(len: usize) -> Self {
         Self { vec: None, len }
     }
 }
 
-impl crate::Parser for Parser {
-    type Output = Box<[u8]>;
+impl crate::Parser for VecParser {
+    type Output = Vec<u8>;
 
     fn parse(
         &mut self,
@@ -35,16 +35,16 @@ impl crate::Parser for Parser {
             vec.push(byte);
         }
 
-        Some(vec.into_boxed_slice())
+        Some(vec)
     }
 }
 
-pub struct SizedParser<const LEN: usize> {
+pub struct ArrayParser<const LEN: usize> {
     bytes: [MaybeUninit<u8>; LEN],
     index: usize,
 }
 
-impl<const LEN: usize> SizedParser<LEN> {
+impl<const LEN: usize> ArrayParser<LEN> {
     pub const fn new() -> Self {
         Self {
             bytes: [MaybeUninit::uninit(); LEN],
@@ -53,7 +53,7 @@ impl<const LEN: usize> SizedParser<LEN> {
     }
 }
 
-impl<const LEN: usize> crate::Parser for SizedParser<LEN> {
+impl<const LEN: usize> crate::Parser for ArrayParser<LEN> {
     type Output = [u8; LEN];
 
     fn parse(

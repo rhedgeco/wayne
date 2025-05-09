@@ -2,16 +2,16 @@ use std::os::fd::OwnedFd;
 
 use crate::Buffer;
 
-use super::bytes;
+use super::utils;
 
 pub struct Parser {
-    bytes: bytes::SizedParser<4>,
+    bytes: utils::ArrayParser<4>,
 }
 
 impl Parser {
     pub const fn new() -> Self {
         Self {
-            bytes: bytes::SizedParser::new(),
+            bytes: utils::ArrayParser::new(),
         }
     }
 }

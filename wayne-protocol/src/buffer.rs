@@ -16,25 +16,20 @@ impl<T> Buffer<T> for VecDeque<T> {
     }
 }
 
-pub struct IterBuf<'a, I> {
-    inner: &'a mut I,
-}
+pub struct IterBuf<I>(I);
 
-impl<I, T> Buffer<T> for IterBuf<'_, I>
-where
-    I: Iterator<Item = T>,
-{
+impl<T, I: Iterator<Item = T>> Buffer<T> for IterBuf<I> {
     fn take(&mut self) -> Option<T> {
-        self.inner.next()
+        self.0.next()
     }
 }
 
-impl<I: Iterator> IterBufExt for I {}
-pub trait IterBufExt: Iterator {
-    fn buffer(&mut self) -> IterBuf<Self>
+impl<T: Iterator> IterExt for T {}
+pub trait IterExt: Iterator {
+    fn buffer(self) -> IterBuf<Self>
     where
         Self: Sized,
     {
-        IterBuf { inner: self }
+        IterBuf(self)
     }
 }

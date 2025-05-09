@@ -1,10 +1,9 @@
 use std::{collections::VecDeque, mem::MaybeUninit, process::Command};
 
 use wayne::{
-    core::{StreamExt, WaylandSocket},
-    protocol::{Parser, buffer::IterBufExt, protocols::wayland::wl_display::WlDisplayRequest},
+    core::{StreamExt, WaylandSocket, message::MessageParser},
+    protocol::{Parser, buffer::IterExt, protocols::wayland::wl_display::WlDisplayRequest},
 };
-use wayne_core::message::MessageParser;
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -57,8 +56,8 @@ fn main() -> anyhow::Result<()> {
 
                 // try to parse the message
                 match parser.parse(message.body.iter().map(|b| *b).buffer(), &mut *fds) {
-                    Err(err) => log::error!("Failed to parse message: {err}"),
-                    Ok(request) => log::info!("{request:?}"),
+                    Some(request) => log::info!("{request:?}"),
+                    None => log::error!("Failed to parse message"),
                 }
             }
         }

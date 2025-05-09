@@ -1,26 +1,26 @@
 use std::os::fd::OwnedFd;
 
-use crate::{Buffer, types::RawString};
+use crate::{Buffer, types::RawId};
 
-use super::array;
+use super::uint;
 
 pub struct Parser {
-    array: array::Parser,
+    value: uint::Parser,
 }
 
 impl Parser {
     pub const fn new() -> Self {
         Self {
-            array: array::Parser::new(),
+            value: uint::Parser::new(),
         }
     }
 }
 
 impl crate::Parser for Parser {
-    type Output = RawString;
+    type Output = RawId;
 
     fn parse(&mut self, bytes: impl Buffer<u8>, fds: impl Buffer<OwnedFd>) -> Option<Self::Output> {
-        let array = self.array.parse(bytes, fds)?;
-        Some(RawString::from_bytes(array))
+        let value = self.value.parse(bytes, fds)?;
+        Some(RawId::from_value(value))
     }
 }

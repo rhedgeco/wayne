@@ -1,17 +1,17 @@
-use std::os::unix::prelude::OwnedFd;
+use std::os::fd::OwnedFd;
 
-use crate::{Buffer, parser::ParseResult};
+use crate::Buffer;
 
 use super::bytes;
 
 pub struct Parser {
-    bytes: bytes::Sized<4>,
+    bytes: bytes::SizedParser<4>,
 }
 
 impl Parser {
     pub const fn new() -> Self {
         Self {
-            bytes: bytes::Sized::new(),
+            bytes: bytes::SizedParser::new(),
         }
     }
 }
@@ -19,8 +19,8 @@ impl Parser {
 impl crate::Parser for Parser {
     type Output = i32;
 
-    fn parse(&mut self, bytes: impl Buffer<u8>, fds: impl Buffer<OwnedFd>) -> ParseResult<Self> {
+    fn parse(&mut self, bytes: impl Buffer<u8>, fds: impl Buffer<OwnedFd>) -> Option<Self::Output> {
         let bytes = self.bytes.parse(bytes, fds)?;
-        Ok(i32::from_ne_bytes(bytes))
+        Some(i32::from_ne_bytes(bytes))
     }
 }

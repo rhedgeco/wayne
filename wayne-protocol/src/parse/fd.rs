@@ -1,9 +1,6 @@
 use std::os::fd::OwnedFd;
 
-use crate::{
-    Buffer,
-    parser::{ParseError, ParseResult},
-};
+use crate::Buffer;
 
 pub struct Parser(());
 
@@ -16,10 +13,7 @@ impl Parser {
 impl crate::Parser for Parser {
     type Output = OwnedFd;
 
-    fn parse(&mut self, _: impl Buffer<u8>, mut fds: impl Buffer<OwnedFd>) -> ParseResult<Self> {
-        match fds.take() {
-            Some(fd) => Ok(fd),
-            None => Err(ParseError::Incomplete),
-        }
+    fn parse(&mut self, _: impl Buffer<u8>, mut fds: impl Buffer<OwnedFd>) -> Option<Self::Output> {
+        fds.take()
     }
 }

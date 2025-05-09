@@ -47,10 +47,15 @@ impl ToTokens for Generator {
                 // re-export useful protocol items
                 #[allow(unused_imports)]
                 use #protocol_path::{
-                    Buffer, Parser,
-                    parse::{Builder, array, fd, fixed, int, raw_id, string, uint},
-                    parser::ParseResult,
-                    types::{RawEnum, ObjId, NewId},
+                    Parser, Buffer,
+                    parser::Builder,
+                    types::{
+                        RawEnum, RawString,
+                        RawId, id::{ObjId, NewId},
+                    },
+                    parse::{
+                        int, uint, float, string, id, array, fd,
+                    },
                 };
 
                 #(#interface_types)*
@@ -106,7 +111,11 @@ impl ToTokens for Type<&Interface> {
         });
         let parser_parse = self.0.requests.iter().map(|request| {
             let variant = utils::ident(request.name.to_case(Case::Pascal));
-            quote! { Self::#variant(parser) => Ok(#request_enum::#variant(parser.parse(bytes, fds)?)) }
+            quote! {
+                Self::#variant(parser) => Some(
+                    #request_enum::#variant(parser.parse(bytes, fds)?)
+                )
+            }
         });
 
         let request_parsers = self.0.requests.iter().map(Parser);
@@ -164,7 +173,7 @@ impl ToTokens for Type<&Interface> {
                 impl Parser for #parser_enum {
                     type Output = #request_enum;
 
-                    fn parse(&mut self, bytes: impl Buffer<u8>, fds: impl Buffer<OwnedFd>) -> ParseResult<Self> {
+                    fn parse(&mut self, bytes: impl Buffer<u8>, fds: impl Buffer<OwnedFd>) -> Option<Self::Output> {
                         match self {
                             #(#parser_parse,)*
                             _ => unreachable!(),
@@ -221,7 +230,7 @@ impl ToTokens for Parser<&Request> {
             impl #parser {
                 pub fn new() -> Self {
                     Self {
-                        #(#arg_name: Builder::new(#arg_ty()),)*
+                        #(#arg_name: Builder::new(#arg_ty::Parser::new()),)*
                     }
                 }
             }
@@ -232,11 +241,11 @@ impl ToTokens for Parser<&Request> {
                 fn parse(
                     &mut self,
                     mut bytes: impl Buffer<u8>,
-                    mut fds: impl Buffer<OwnedFd>,
-                ) -> ParseResult<Self> {
+                    mut fds: impl Buffer<OwnedFd>
+                ) -> Option<Self::Output> {
                     #(self.#arg_name.parse(&mut bytes, &mut fds)?;)*
 
-                    Ok(#ident {
+                    Some(#ident {
                         #(#arg_name: self.#arg_name.finish()?.into(),)*
                     })
                 }
@@ -312,7 +321,7 @@ impl ToTokens for Type<&Arg> {
             ArgType::Int => quote! { i32 },
             ArgType::Uint => quote! { u32 },
             ArgType::Fixed => quote! { f32 },
-            ArgType::String => quote! { String },
+            ArgType::String => quote! { RawString },
             ArgType::Array => quote! { Box<[u8]> },
             ArgType::Fd => quote! { OwnedFd },
             ArgType::Object => quote! { ObjId<#interface> },
@@ -320,7 +329,17 @@ impl ToTokens for Type<&Arg> {
         };
 
         if let Some(kind) = &self.0.enum_kind {
-            let kind = utils::enum_kind(kind);
+            let mut parts = kind.split(".");
+            let first = parts.next().unwrap();
+            let kind = match parts.next() {
+                None => utils::ident(first.to_case(Case::Pascal)).into_token_stream(),
+                Some(second) => {
+                    let interface = utils::ident(first);
+                    let ident = utils::ident(second.to_case(Case::Pascal));
+                    quote! { #interface::#ident }
+                }
+            };
+
             arg_ty = quote! { RawEnum<#arg_ty, #kind> };
         }
 
@@ -336,10 +355,10 @@ impl ToTokens for Parser<&ArgType> {
         let ty = match &self.0 {
             ArgType::Int => utils::ident("int"),
             ArgType::Uint => utils::ident("uint"),
-            ArgType::Fixed => utils::ident("fixed"),
+            ArgType::Fixed => utils::ident("float"),
             ArgType::String => utils::ident("string"),
-            ArgType::Object => utils::ident("raw_id"),
-            ArgType::NewId => utils::ident("raw_id"),
+            ArgType::Object => utils::ident("id"),
+            ArgType::NewId => utils::ident("id"),
             ArgType::Array => utils::ident("array"),
             ArgType::Fd => utils::ident("fd"),
         };
@@ -349,9 +368,7 @@ impl ToTokens for Parser<&ArgType> {
 }
 
 mod utils {
-    use convert_case::{Case, Casing};
-    use proc_macro2::{Span, TokenStream};
-    use quote::{ToTokens, quote};
+    use proc_macro2::Span;
     use syn::Ident;
 
     pub fn ident(s: impl AsRef<str>) -> Ident {
@@ -359,19 +376,6 @@ mod utils {
         match s.starts_with(|c: char| c.is_numeric()) {
             true => Ident::new(&format!("_{s}"), Span::call_site()),
             false => Ident::new(s, Span::call_site()),
-        }
-    }
-
-    pub fn enum_kind(s: impl AsRef<str>) -> TokenStream {
-        let mut parts = s.as_ref().split(".");
-        let first = parts.next().unwrap();
-        match parts.next() {
-            None => ident(first.to_case(Case::Pascal)).into_token_stream(),
-            Some(second) => {
-                let interface = ident(first);
-                let ident = ident(second.to_case(Case::Pascal));
-                quote! { #interface::#ident }
-            }
         }
     }
 }

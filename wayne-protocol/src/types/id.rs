@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{any::type_name, fmt::Debug, marker::PhantomData};
 
 use derivative::Derivative;
 use derive_more::Display;
@@ -18,7 +18,7 @@ impl RawId {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Derivative, Display)]
+#[derive(Derivative, Display)]
 #[derivative(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[display("{raw}")]
 pub struct ObjId<T> {
@@ -45,8 +45,16 @@ impl<T> ObjId<T> {
     }
 }
 
+impl<T> Debug for ObjId<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&format!("ObjId<{}>", type_name::<T>()))
+            .field("raw", &self.raw)
+            .finish()
+    }
+}
+
 #[repr(transparent)]
-#[derive(Debug, Derivative, Display)]
+#[derive(Derivative, Display)]
 #[derivative(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[display("{raw}")]
 pub struct NewId<T> {
@@ -70,5 +78,13 @@ impl<T> NewId<T> {
             _type: PhantomData,
             raw,
         }
+    }
+}
+
+impl<T> Debug for NewId<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&format!("NewId<{}>", type_name::<T>()))
+            .field("raw", &self.raw)
+            .finish()
     }
 }

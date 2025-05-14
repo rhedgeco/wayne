@@ -1,5 +1,3 @@
-use std::mem::MaybeUninit;
-
 /// A raw wayland message
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Message<'a> {
@@ -9,67 +7,59 @@ pub struct Message<'a> {
 }
 
 /// A buffer that parses and produces [`RawMessage`] data
-pub struct MessageBuffer<'a> {
-    buffer: &'a mut [MaybeUninit<u8>],
-    parse_index: usize,
-    init_len: usize,
+pub struct MessageBuffer<Buf> {
+    parse_start: usize,
+    parse_end: usize,
+    buffer: Buf,
 }
 
-impl<'a> MessageBuffer<'a> {
+impl<Buf: AsRef<[u8]> + AsMut<[u8]>> MessageBuffer<Buf> {
     /// Returns a new message buffer backed by the provided `buffer`
-    pub fn new(buffer: &'a mut [MaybeUninit<u8>]) -> Self {
+    pub fn new(buffer: Buf) -> Self {
         Self {
+            parse_start: 0,
+            parse_end: 0,
             buffer,
-            parse_index: 0,
-            init_len: 0,
         }
     }
 
-    /// Attempts to write as many bytes from `data` into the buffer as possible,
-    /// returning the number of bytes that were successfully written.
-    pub fn write_bytes(&mut self, data: &[u8]) -> usize {
-        let uninit = self.get_uninit_space();
-        let src = data.as_ptr();
-        let dst = uninit.as_mut_ptr().cast::<u8>();
-        let count = uninit.len().min(data.len());
+    /// Manually mark the next `count` bytes as filled
+    ///
+    /// This usually means the free_space buffer was filled by copying bytes directly
+    pub fn mark_filled(&mut self, count: usize) {
+        let buffer_len = self.buffer.as_ref().len();
+        self.parse_end = self.parse_end.saturating_add(count).min(buffer_len);
+    }
 
-        // SAFETY:
-        // src and dst are valid for length count.
-        // count was built by taking the lowest of the two lengths.
-        // both slices come from safe rust code and are properly aligned
-        unsafe { core::ptr::copy(src, dst, count) };
-        self.init_len += count;
+    /// Write as many `bytes` into the buffer as possible
+    ///
+    /// Returns the number of bytes successfully written
+    pub fn write(&mut self, bytes: &[u8]) -> usize {
+        let free_space = self.free_space();
+        let count = free_space.len().min(bytes.len());
+        free_space[..count].copy_from_slice(&bytes[..count]);
+        self.parse_end += count;
         count
     }
 
-    /// Marks the next `count` bytes in the buffer as initialized and ready for parsing
+    /// Returns the free buffer space
     ///
-    /// # SAFETY
-    /// Behavior is undefined if any of the following conditions are violated:
-    /// - `count` must be less than or equal to the length of the uninitialized buffer space
-    /// - the first `count` bytes of the uninitialized buffer must have been properly initialized
-    ///
-    /// You may initialize the buffer by calling [`get_uninit_space`](Self::get_uninit_space) and writing bytes to it
-    pub unsafe fn set_init(&mut self, count: usize) {
-        self.init_len += count
-    }
+    /// This can be used to fill the buffer with data before advancing the parser
+    pub fn free_space(&mut self) -> &mut [u8] {
+        let buffer = self.buffer.as_mut();
 
-    /// Returns the a mutable subslice of the buffer that is currently uninitialized
-    pub fn get_uninit_space(&mut self) -> &mut [MaybeUninit<u8>] {
-        // if there are messages that have already been parsed
-        if self.parse_index > 0 {
-            // assert that the parse index is less than the total init length
-            debug_assert!(self.parse_index < self.init_len);
+        // if there is parsed data at the front
+        if self.parse_start > 0 {
+            // copy the remaining bytes to the start
+            buffer.copy_within(self.parse_start..self.parse_end, 0);
 
-            // copy the remaining buffer contents to the beginning
-            self.buffer.copy_within(self.parse_index..self.init_len, 0);
-
-            // reset the init length to reflect shifted values
-            self.init_len -= self.parse_index;
+            // and update the parse indices
+            self.parse_end -= self.parse_start;
+            self.parse_start = 0;
         }
 
-        // return the subslice of the buffer that is yet to be initialized
-        &mut self.buffer[self.init_len..]
+        // then return the free space subslice
+        &mut buffer[self.parse_end..]
     }
 
     /// Parses and returns the next [`RawMessage`] in the buffer.
@@ -77,7 +67,7 @@ impl<'a> MessageBuffer<'a> {
     /// Returns `None` if no more complete messages could be parsed.
     pub fn parse(&mut self) -> Option<Message> {
         // get the initialized buffer and remove the already parsed bytes
-        let data = &self.buffer[self.parse_index..self.init_len];
+        let data = &self.buffer.as_ref()[self.parse_start..self.parse_end];
 
         // SAFETY:
         // MessageBuffer invariants require that all data up to init_len is properly initialized
@@ -103,7 +93,7 @@ impl<'a> MessageBuffer<'a> {
         }
 
         // increment the parse index for the next iteration
-        self.parse_index += message_len;
+        self.parse_start += message_len;
 
         // build and return the parsed message
         Some(Message {
@@ -111,5 +101,83 @@ impl<'a> MessageBuffer<'a> {
             opcode: (second_word & 0xFFFF) as u16,
             body: &data[8..message_len],
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const OBJID: u32 = 420;
+    const OPCODE: u16 = 69;
+    const LENGTH: u16 = (8 + BODY.len()) as u16;
+    const BODY: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8]; // must be multiple of 32 bits length
+    const WORD2: u32 = (OPCODE as u32) | ((LENGTH as u32) << 16);
+    const BYTES: &[u8] = constcat::concat_bytes!(&OBJID.to_ne_bytes(), &WORD2.to_ne_bytes(), BODY);
+
+    #[test]
+    fn copy_message() {
+        // build the buffer
+        let mut buffer = MessageBuffer::new([0; BYTES.len()]);
+
+        // copy the message into the free space
+        buffer.free_space().copy_from_slice(BYTES);
+        buffer.mark_filled(BYTES.len());
+
+        // parse and validate the message
+        let message = buffer.parse().unwrap();
+        assert_eq!(message.object_id, OBJID);
+        assert_eq!(message.opcode, OPCODE);
+        assert_eq!(message.body, BODY);
+        assert!(buffer.parse().is_none());
+    }
+
+    #[test]
+    fn write_message() {
+        // build the buffer
+        let mut buffer = MessageBuffer::new([0; BYTES.len()]);
+
+        // write the message into the free space
+        let write_len = buffer.write(BYTES);
+        assert_eq!(write_len, BYTES.len());
+
+        // parse and validate the message
+        let message = buffer.parse().unwrap();
+        assert_eq!(message.object_id, OBJID);
+        assert_eq!(message.opcode, OPCODE);
+        assert_eq!(message.body, BODY);
+        assert!(buffer.parse().is_none());
+    }
+
+    #[test]
+    fn partial_parse() {
+        // build the buffer
+        const PARTIAL: usize = BYTES.len() / 2;
+        const LEN: usize = BYTES.len() + PARTIAL;
+        let mut buffer = MessageBuffer::new([0; LEN]);
+
+        // write one message and a half messages into the free space
+        let write_len = buffer.write(BYTES);
+        assert_eq!(write_len, BYTES.len());
+        let write_len = buffer.write(BYTES);
+        assert_eq!(write_len, PARTIAL);
+
+        // parse the first message
+        let message = buffer.parse().unwrap();
+        assert_eq!(message.object_id, OBJID);
+        assert_eq!(message.opcode, OPCODE);
+        assert_eq!(message.body, BODY);
+        assert!(buffer.parse().is_none());
+
+        // write the rest of the second message
+        let write_len = buffer.write(&BYTES[PARTIAL..]);
+        assert_eq!(write_len, BYTES.len() - PARTIAL);
+
+        // parse the second message
+        let message = buffer.parse().unwrap();
+        assert_eq!(message.object_id, OBJID);
+        assert_eq!(message.opcode, OPCODE);
+        assert_eq!(message.body, BODY);
+        assert!(buffer.parse().is_none());
     }
 }

@@ -837,6 +837,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wayne-message"
+version = "0.1.0"
+
+[[package]]
 name = "wayne-protocol"
 version = "0.1.0"
 dependencies = [

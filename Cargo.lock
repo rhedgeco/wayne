@@ -824,6 +824,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wayne-buffer"
+version = "0.1.0"
+
+[[package]]
 name = "wayne-core"
 version = "0.1.0"
 dependencies = [

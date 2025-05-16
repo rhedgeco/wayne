@@ -1,5 +1,5 @@
-pub mod core {
-    pub use wayne_core::*;
+pub mod server {
+    pub use wayne_server::*;
 }
 
 pub mod protocol {

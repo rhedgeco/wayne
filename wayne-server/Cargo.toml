@@ -1,11 +1,7 @@
 [package]
-name = "wayne-core"
+name = "wayne-server"
 version = "0.1.0"
 edition = "2024"
-license = "MIT OR Apache-2.0"
-description = "core foundation structures for wayne"
-repository = "https://github.com/rhedgeco/wayne"
-readme = "README.md"
 
 [dependencies]
 fs2 = "0.4"

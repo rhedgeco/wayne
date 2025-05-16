@@ -1,9 +1,7 @@
-use std::{collections::VecDeque, mem::MaybeUninit, process::Command};
+use std::process::Command;
 
-use wayne::{
-    core::{StreamExt, WaylandSocket, message::MessageParser},
-    protocol::{Parser, buffer::IterExt, protocols::wayland::wl_display::WlDisplayRequest},
-};
+use wayne::{protocol::protocols::wayland::wl_display::WlDisplayRequest, server::WaylandSocket};
+use wayne_stream::StreamBuilder;
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -18,8 +16,6 @@ fn main() -> anyhow::Result<()> {
 
     // create a loop to process events
     let mut clients = Vec::new();
-    let mut data_buffer = [MaybeUninit::uninit(); 64];
-    let mut ctrl_buffer = [MaybeUninit::uninit(); 4096];
     loop {
         // accept all pending clients
         if let Some(stream) = socket.accept()? {
@@ -27,39 +23,49 @@ fn main() -> anyhow::Result<()> {
                 "New client connected to Wayland Socket: '{}'",
                 socket.name()
             );
-            clients.push((
-                stream,
-                MessageParser::new(),
-                VecDeque::new(),
-                VecDeque::new(),
-            ));
+
+            clients.push(
+                StreamBuilder::from_unix(stream)
+                    .with_data_buffer([0; 64])
+                    .with_ctrl_buffer([0; 64])
+                    .build(),
+            );
         }
 
-        for (stream, message, messages, fds) in &mut clients {
-            // get fresh bytes from the stream
-            let recv = stream.read(&mut data_buffer, &mut ctrl_buffer)?;
+        for stream in &mut clients {
+            // read from the socket to get fresh messages
+            if !stream.read_socket()? {
+                continue;
+            }
 
-            // store the fds
-            fds.extend(recv.fds());
-
-            // build and store all new messages
-            messages.extend(message.parse(recv.data()));
-
-            // parse all pending messages
-            for message in messages.drain(..) {
+            // read all pending messages
+            while let Some(message) = stream.parse_message() {
                 // build the message parser
                 log::debug!("parsing message: {message:?}");
-                let Some(mut parser) = WlDisplayRequest::parser(message.opcode) else {
+                let Some(_) = WlDisplayRequest::parser(message.opcode) else {
                     log::error!("invalid opcode");
                     continue;
                 };
-
-                // try to parse the message
-                match parser.parse(message.body.iter().map(|b| *b).buffer(), &mut *fds) {
-                    Some(request) => log::info!("{request:?}"),
-                    None => log::error!("Failed to parse message"),
-                }
             }
+
+            // // build and store all new messages
+            // messages.extend(message.parse(recv.data()));
+
+            // // parse all pending messages
+            // for message in messages.drain(..) {
+            //     // build the message parser
+            //     log::debug!("parsing message: {message:?}");
+            //     let Some(mut parser) = WlDisplayRequest::parser(message.opcode) else {
+            //         log::error!("invalid opcode");
+            //         continue;
+            //     };
+
+            //     // try to parse the message
+            //     match parser.parse(message.body.iter().map(|b| *b).buffer(), &mut *fds) {
+            //         Some(request) => log::info!("{request:?}"),
+            //         None => log::error!("Failed to parse message"),
+            //     }
+            // }
         }
     }
 }

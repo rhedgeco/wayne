@@ -4,7 +4,6 @@ use std::{
         fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
         unix::net::UnixStream,
     },
-    path::Path,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -14,61 +13,39 @@ pub struct Message<'a> {
     pub body: &'a [u8],
 }
 
-pub struct WaylandStream<Data, Ctrl>
-where
-    Data: AsRef<[u8]> + AsMut<[u8]>,
-    Ctrl: AsRef<[u8]> + AsMut<[u8]>,
-{
+pub struct StreamBuilder<Data, Ctrl> {
     stream: UnixStream,
     data_buf: Data,
     ctrl_buf: Ctrl,
-    data_start: usize,
-    ctrl_start: usize,
-    data_end: usize,
 }
 
-impl<Data, Ctrl> WaylandStream<Data, Ctrl>
-where
-    Data: AsRef<[u8]> + AsMut<[u8]>,
-    Ctrl: AsRef<[u8]> + AsMut<[u8]>,
-{
-    pub fn unix(stream: UnixStream) -> WaylandStreamBuilder<(), ()> {
-        WaylandStreamBuilder {
+impl StreamBuilder<(), ()> {
+    pub fn from_unix(stream: UnixStream) -> Self {
+        Self {
             stream,
             data_buf: (),
             ctrl_buf: (),
         }
     }
-
-    pub fn connect(path: impl AsRef<Path>) -> io::Result<WaylandStreamBuilder<(), ()>> {
-        let stream = UnixStream::connect(path)?;
-        Ok(Self::unix(stream))
-    }
 }
 
-pub struct WaylandStreamBuilder<Data, Ctrl> {
-    stream: UnixStream,
-    data_buf: Data,
-    ctrl_buf: Ctrl,
-}
-
-impl<Data, Ctrl> WaylandStreamBuilder<Data, Ctrl> {
-    pub fn with_data_buffer<NewData>(self, buf: NewData) -> WaylandStreamBuilder<NewData, Ctrl>
+impl<Data, Ctrl> StreamBuilder<Data, Ctrl> {
+    pub fn with_data_buffer<NewData>(self, buf: NewData) -> StreamBuilder<NewData, Ctrl>
     where
         NewData: AsRef<[u8]> + AsMut<[u8]>,
     {
-        WaylandStreamBuilder {
+        StreamBuilder {
             stream: self.stream,
             data_buf: buf,
             ctrl_buf: self.ctrl_buf,
         }
     }
 
-    pub fn with_ctrl_buffer<NewCtrl>(self, buf: NewCtrl) -> WaylandStreamBuilder<Data, NewCtrl>
+    pub fn with_ctrl_buffer<NewCtrl>(self, buf: NewCtrl) -> StreamBuilder<Data, NewCtrl>
     where
         NewCtrl: AsRef<[u8]> + AsMut<[u8]>,
     {
-        WaylandStreamBuilder {
+        StreamBuilder {
             stream: self.stream,
             data_buf: self.data_buf,
             ctrl_buf: buf,
@@ -91,6 +68,19 @@ impl<Data, Ctrl> WaylandStreamBuilder<Data, Ctrl> {
             data_end: data_len,
         }
     }
+}
+
+pub struct WaylandStream<Data, Ctrl>
+where
+    Data: AsRef<[u8]> + AsMut<[u8]>,
+    Ctrl: AsRef<[u8]> + AsMut<[u8]>,
+{
+    stream: UnixStream,
+    data_buf: Data,
+    ctrl_buf: Ctrl,
+    data_start: usize,
+    ctrl_start: usize,
+    data_end: usize,
 }
 
 impl<Data, Ctrl> Drop for WaylandStream<Data, Ctrl>

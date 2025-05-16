@@ -819,22 +819,9 @@ dependencies = [
  "anyhow",
  "env_logger",
  "log",
- "wayne-core",
  "wayne-protocol",
+ "wayne-server",
  "wayne-stream",
-]
-
-[[package]]
-name = "wayne-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "constcat",
- "env_logger",
- "fs2",
- "libc",
- "log",
- "thiserror",
 ]
 
 [[package]]
@@ -862,6 +849,19 @@ dependencies = [
  "serde",
  "serde_with",
  "syn 2.0.100",
+ "thiserror",
+]
+
+[[package]]
+name = "wayne-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "constcat",
+ "env_logger",
+ "fs2",
+ "libc",
+ "log",
  "thiserror",
 ]
 

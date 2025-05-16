@@ -10,6 +10,7 @@ readme = "README.md"
 [dependencies]
 wayne-core.workspace = true
 wayne-protocol.workspace = true
+wayne-stream.workspace = true
 
 [dev-dependencies]
 anyhow = "1.0"

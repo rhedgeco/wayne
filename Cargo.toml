@@ -3,14 +3,14 @@ resolver = "3"
 members = [
     "wayne",
     "wayne-core",
-    "wayne-message",
     "wayne-protocol",
     "wayne-protocol-macros",
+    "wayne-stream",
 ]
 
 [workspace.dependencies]
 wayne = { path = "wayne" }
 wayne-core = { path = "wayne-core" }
-wayne-message = { path = "wayne-message" }
 wayne-protocol = { path = "wayne-protocol" }
 wayne-protocol-macros = { path = "wayne-protocol-macros" }
+wayne-stream = { path = "wayne-stream" }

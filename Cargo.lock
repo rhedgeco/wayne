@@ -821,6 +821,7 @@ dependencies = [
  "log",
  "wayne-core",
  "wayne-protocol",
+ "wayne-stream",
 ]
 
 [[package]]
@@ -834,13 +835,6 @@ dependencies = [
  "libc",
  "log",
  "thiserror",
-]
-
-[[package]]
-name = "wayne-message"
-version = "0.1.0"
-dependencies = [
- "constcat",
 ]
 
 [[package]]
@@ -869,6 +863,14 @@ dependencies = [
  "serde_with",
  "syn 2.0.100",
  "thiserror",
+]
+
+[[package]]
+name = "wayne-stream"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "log",
 ]
 
 [[package]]

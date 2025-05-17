@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use wayne::{
-    message::MessageBuffer, protocol::protocols::wayland::wl_display::WlDisplayRequest,
+    message::StreamBuffer, protocol::protocols::wayland::wl_display::WlDisplayRequest,
     server::WaylandSocket,
 };
 
@@ -26,7 +26,7 @@ fn main() -> anyhow::Result<()> {
                 socket.name()
             );
 
-            clients.push((stream, MessageBuffer::new([0; 64], [0; 64])));
+            clients.push((stream, StreamBuffer::new([0; 64], [0; 64])));
         }
 
         for (stream, buffer) in &mut clients {

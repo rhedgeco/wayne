@@ -15,7 +15,7 @@ pub struct Message<'a> {
 }
 
 /// A data buffer that can be used to read wayland messages from a `UnixStream`
-pub struct MessageBuffer<Data, Ctrl>
+pub struct StreamBuffer<Data, Ctrl>
 where
     Data: AsRef<[u8]> + AsMut<[u8]>,
     Ctrl: AsRef<[u8]> + AsMut<[u8]>,
@@ -28,7 +28,7 @@ where
     ctrl_end: Option<usize>,
 }
 
-impl<Data, Ctrl> Drop for MessageBuffer<Data, Ctrl>
+impl<Data, Ctrl> Drop for StreamBuffer<Data, Ctrl>
 where
     Data: AsRef<[u8]> + AsMut<[u8]>,
     Ctrl: AsRef<[u8]> + AsMut<[u8]>,
@@ -40,7 +40,7 @@ where
     }
 }
 
-impl<Data, Ctrl> MessageBuffer<Data, Ctrl>
+impl<Data, Ctrl> StreamBuffer<Data, Ctrl>
 where
     Data: AsRef<[u8]> + AsMut<[u8]>,
     Ctrl: AsRef<[u8]> + AsMut<[u8]>,

@@ -6,9 +6,9 @@ pub mod protocol {
     pub use wayne_protocol::*;
 }
 
-pub mod stream {
-    pub use wayne_stream::*;
+pub mod message {
+    pub use wayne_message::*;
 }
 
+pub use message::Message;
 pub use protocol::protocol;
-pub use stream::WaylandStream;

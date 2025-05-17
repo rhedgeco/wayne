@@ -1,7 +1,9 @@
 use std::process::Command;
 
-use wayne::{protocol::protocols::wayland::wl_display::WlDisplayRequest, server::WaylandSocket};
-use wayne_stream::StreamBuilder;
+use wayne::{
+    message::MessageBuffer, protocol::protocols::wayland::wl_display::WlDisplayRequest,
+    server::WaylandSocket,
+};
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -24,22 +26,17 @@ fn main() -> anyhow::Result<()> {
                 socket.name()
             );
 
-            clients.push(
-                StreamBuilder::from_unix(stream)
-                    .with_data_buffer([0; 64])
-                    .with_ctrl_buffer([0; 64])
-                    .build(),
-            );
+            clients.push((stream, MessageBuffer::new([0; 64], [0; 64])));
         }
 
-        for stream in &mut clients {
+        for (stream, buffer) in &mut clients {
             // read from the socket to get fresh messages
-            if !stream.read_socket()? {
+            if !buffer.read_from_stream(stream)? {
                 continue;
             }
 
             // read all pending messages
-            while let Some(message) = stream.parse_message() {
+            while let Some(message) = buffer.parse_message() {
                 // build the message parser
                 log::debug!("parsing message: {message:?}");
                 let Some(_) = WlDisplayRequest::parser(message.opcode) else {

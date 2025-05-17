@@ -376,6 +376,8 @@ mod tests {
         assert_eq!(message.object_id, MESSAGE.object_id);
         assert_eq!(message.opcode, MESSAGE.opcode);
         assert_eq!(message.body, MESSAGE.body);
+
+        assert!(buffer.parse_message().is_none());
     }
 
     #[test]
@@ -396,7 +398,9 @@ mod tests {
         };
 
         let fd = buffer.parse_fd().unwrap().into_raw_fd();
-        assert_eq!(fd, RAW)
+        assert_eq!(fd, RAW);
+
+        assert!(buffer.parse_fd().is_none());
     }
 
     #[test]
@@ -429,6 +433,8 @@ mod tests {
             assert_eq!(message.opcode, MESSAGE.opcode);
             assert_eq!(message.body, MESSAGE.body);
         }
+
+        assert!(buffer.parse_message().is_none());
     }
 
     #[test]
@@ -455,5 +461,38 @@ mod tests {
             let fd = buffer.parse_fd().unwrap().into_raw_fd();
             assert_eq!(fd, RAW)
         }
+
+        assert!(buffer.parse_fd().is_none());
+    }
+
+    #[test]
+    fn parse_partial() {
+        const MESSAGE: Message = Message {
+            object_id: 42,
+            opcode: 69,
+            body: &[1, 2, 3, 4, 5],
+        };
+
+        let mut bytes = Vec::new();
+        encode_message(&mut bytes, &MESSAGE);
+
+        let mut buffer = ReadBuffer {
+            data_buf: bytes,
+            ctrl_buf: [],
+            data_start: 0,
+            ctrl_start: 0,
+            data_end: 7,
+            ctrl_end: Some(0),
+        };
+
+        assert!(buffer.parse_message().is_none());
+
+        buffer.data_end = buffer.data_buf.len();
+        let message = buffer.parse_message().unwrap();
+        assert_eq!(message.object_id, MESSAGE.object_id);
+        assert_eq!(message.opcode, MESSAGE.opcode);
+        assert_eq!(message.body, MESSAGE.body);
+
+        assert!(buffer.parse_message().is_none());
     }
 }

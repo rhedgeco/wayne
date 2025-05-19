@@ -11,7 +11,7 @@ pub struct Protocol {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Description {
-    #[serde(rename = "@summary")]
+    #[serde(default, rename = "@summary")]
     pub summary: String,
     #[serde(rename = "$text")]
     pub text: Option<String>,
@@ -33,7 +33,7 @@ pub struct Interface {
     pub name: String,
     #[serde(rename = "@version")]
     pub version: u32,
-    #[serde(rename = "description")]
+    #[serde(default, rename = "description")]
     pub description: Description,
     #[serde(default, rename = "request")]
     pub requests: Vec<Request>,
@@ -47,7 +47,7 @@ pub struct Interface {
 pub struct Request {
     #[serde(rename = "@name")]
     pub name: String,
-    #[serde(rename = "description")]
+    #[serde(default, rename = "description")]
     pub description: Description,
     #[serde(default, rename = "arg")]
     pub args: Vec<Arg>,
@@ -69,7 +69,7 @@ pub struct Arg {
     //     deserialize_with = "utils::parse_bool"
     // )]
     // pub allow_null: bool,
-    #[serde(rename = "@summary")]
+    #[serde(default, rename = "@summary")]
     pub summary: String,
 }
 
@@ -90,7 +90,7 @@ pub enum ArgType {
 pub struct Event {
     #[serde(rename = "@name")]
     pub name: String,
-    #[serde(rename = "description")]
+    #[serde(default, rename = "description")]
     pub description: Description,
     #[serde(default, rename = "arg")]
     pub args: Vec<Arg>,

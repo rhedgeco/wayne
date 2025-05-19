@@ -1,8 +1,8 @@
 use std::process::Command;
 
 use wayne::{
-    message::ReadBuffer, protocol::protocols::wayland::wl_display::WlDisplayRequest,
-    server::WaylandSocket,
+    protocol::protocols::wayland::wl_display::WlDisplayRequest, server::WaylandSocket,
+    stream::buffer::ReadBuffer,
 };
 
 fn main() -> anyhow::Result<()> {

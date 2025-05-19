@@ -8,9 +8,9 @@ repository = "https://github.com/rhedgeco/wayne"
 readme = "README.md"
 
 [dependencies]
-wayne-message.workspace = true
 wayne-protocol.workspace = true
 wayne-server.workspace = true
+wayne-stream.workspace = true
 
 [dev-dependencies]
 anyhow = "1.0"

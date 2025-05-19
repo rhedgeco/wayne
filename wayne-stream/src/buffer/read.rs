@@ -6,13 +6,7 @@ use std::{
     },
 };
 
-/// A raw wayland message before it has been parsed into a protocol item
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Message<'a> {
-    pub object_id: u32,
-    pub opcode: u16,
-    pub body: &'a [u8],
-}
+use crate::Message;
 
 /// A buffer that can be used to read wayland messages from a `UnixStream`
 pub struct ReadBuffer<Data, Ctrl>
@@ -45,7 +39,7 @@ where
     Data: AsRef<[u8]> + AsMut<[u8]>,
     Ctrl: AsRef<[u8]> + AsMut<[u8]>,
 {
-    /// Returns a new message buffer backed by `data_buf` and `ctrl_buf`
+    /// Returns a new read buffer backed by `data_buf` and `ctrl_buf`
     pub fn new(data_buf: Data, ctrl_buf: Ctrl) -> Self {
         Self {
             data_buf,

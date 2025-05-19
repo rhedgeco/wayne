@@ -819,17 +819,9 @@ dependencies = [
  "anyhow",
  "env_logger",
  "log",
- "wayne-message",
  "wayne-protocol",
  "wayne-server",
-]
-
-[[package]]
-name = "wayne-message"
-version = "0.1.0"
-dependencies = [
- "libc",
- "log",
+ "wayne-stream",
 ]
 
 [[package]]
@@ -871,6 +863,14 @@ dependencies = [
  "libc",
  "log",
  "thiserror",
+]
+
+[[package]]
+name = "wayne-stream"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "log",
 ]
 
 [[package]]

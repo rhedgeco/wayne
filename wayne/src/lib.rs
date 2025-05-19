@@ -9,5 +9,3 @@ pub mod protocol {
 pub mod stream {
     pub use wayne_stream::*;
 }
-
-pub use protocol::protocol;

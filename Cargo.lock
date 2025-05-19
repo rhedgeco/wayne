@@ -825,19 +825,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wayne-protocol"
-version = "0.1.0"
-dependencies = [
- "derivative",
- "derive_more",
- "fixed",
- "log",
- "thiserror",
- "wayne-protocol-macros",
-]
-
-[[package]]
-name = "wayne-protocol-macros"
+name = "wayne-macros"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -850,6 +838,18 @@ dependencies = [
  "serde_with",
  "syn 2.0.100",
  "thiserror",
+]
+
+[[package]]
+name = "wayne-protocol"
+version = "0.1.0"
+dependencies = [
+ "derivative",
+ "derive_more",
+ "fixed",
+ "log",
+ "thiserror",
+ "wayne-macros",
 ]
 
 [[package]]

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="example">
+  <interface name="wl_example" version="1">
+    <request name="example_request">
+      <arg name="example_arg" type="new_id" interface="wl_example"/>
+    </request>
+  </interface>
+</protocol>

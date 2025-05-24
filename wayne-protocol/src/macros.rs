@@ -4,7 +4,7 @@ pub mod __impl {
     pub use wayne_macros::protocol;
 }
 
-/// Takes the path to a wayland protocol xml file, and generates the associated rust structrues.
+/// Takes a path to a wayland protocol xml file, and generates the associated rust structrues.
 ///
 /// The xml path is relative to your crates root directory.
 #[macro_export]

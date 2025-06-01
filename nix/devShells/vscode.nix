@@ -22,9 +22,9 @@ in
             rust-lang.rust-analyzer
             tamasfe.even-better-toml
             vadimcn.vscode-lldb
+            nefrob.vscode-just-syntax
           ]
           ++ (with inputs.vscode-extensions.extensions.${system}.vscode-marketplace; [
-            kokakiwi.vscode-just
             citreae535.sparse-crates
           ]);
       })

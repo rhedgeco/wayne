@@ -1,5 +1,3 @@
-use std::str::Utf8Error;
-
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NewId(pub u32);
@@ -53,10 +51,6 @@ impl<'a> RawString<'a> {
             Some(value) => *value == 0,
             None => false,
         }
-    }
-
-    pub fn to_utf8_str(&self) -> Result<&'a str, Utf8Error> {
-        str::from_utf8(self.0)
     }
 }
 
@@ -113,14 +107,5 @@ mod tests {
 
         let not_null_terminated = RawString(&[1, 2, 3]);
         assert!(!not_null_terminated.null_terminated());
-    }
-
-    #[test]
-    fn raw_string_utf8_str() {
-        let valid_utf8 = RawString(&[0x61, 0x62, 0x63]); // Standard ASCII "abc"
-        assert!(valid_utf8.to_utf8_str().is_ok());
-
-        let invalid_utf8 = RawString(&[0xFF, 0x00]); // 0xFF is never a valid byte in any UTF-8 sequence.
-        assert!(invalid_utf8.to_utf8_str().is_err());
     }
 }

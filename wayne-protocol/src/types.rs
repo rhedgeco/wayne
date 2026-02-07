@@ -41,16 +41,13 @@ impl<'a> RawString<'a> {
         self.0.len() == 0
     }
 
+    pub fn is_null_terminated(&self) -> bool {
+        self.0.last() == Some(&0)
+    }
+
     pub fn has_interior_nulls(&self) -> bool {
         let interior_len = self.0.len().saturating_sub(1);
         (&self.0[0..interior_len]).iter().any(|v| *v == 0)
-    }
-
-    pub fn null_terminated(&self) -> bool {
-        match self.0.last() {
-            Some(value) => *value == 0,
-            None => false,
-        }
     }
 }
 
@@ -103,9 +100,9 @@ mod tests {
     #[test]
     fn raw_string_null_terminated() {
         let null_terminated = RawString(&[1, 2, 0]);
-        assert!(null_terminated.null_terminated());
+        assert!(null_terminated.is_null_terminated());
 
         let not_null_terminated = RawString(&[1, 2, 3]);
-        assert!(!not_null_terminated.null_terminated());
+        assert!(!not_null_terminated.is_null_terminated());
     }
 }

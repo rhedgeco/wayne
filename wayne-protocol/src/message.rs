@@ -135,6 +135,8 @@ mod tests {
         let mut parser = mock_message(&[VALUE]).parser();
         let value = parser.parse_uint().unwrap();
         assert_eq!(value, VALUE);
+
+        assert!(parser.parse_int().is_none());
     }
 
     #[test]
@@ -143,6 +145,8 @@ mod tests {
         let mut parser = mock_message(&[VALUE as u32]).parser();
         let value = parser.parse_int().unwrap();
         assert_eq!(value, VALUE);
+
+        assert!(parser.parse_int().is_none());
     }
 
     #[test]
@@ -151,6 +155,8 @@ mod tests {
         let mut parser = mock_message(&[VALUE as u32]).parser();
         let value = parser.parse_fixed().unwrap();
         assert_eq!(value.0, VALUE);
+
+        assert!(parser.parse_int().is_none());
     }
 
     #[test]
@@ -159,6 +165,8 @@ mod tests {
         let mut parser = mock_message(&[VALUE]).parser();
         let value = parser.parse_object_id().unwrap();
         assert_eq!(value.0, VALUE);
+
+        assert!(parser.parse_int().is_none());
     }
 
     #[test]
@@ -167,6 +175,8 @@ mod tests {
         let mut parser = mock_message(&[VALUE]).parser();
         let value = parser.parse_new_id().unwrap();
         assert_eq!(value.0, VALUE);
+
+        assert!(parser.parse_int().is_none());
     }
 
     #[test]
@@ -182,6 +192,8 @@ mod tests {
         let mut parser = mock_message(DATA).parser();
         let array = parser.parse_array().unwrap();
         assert_eq!(array, ARRAY);
+
+        assert!(parser.parse_int().is_none());
     }
 
     #[test]
@@ -197,5 +209,7 @@ mod tests {
         let mut parser = mock_message(DATA).parser();
         let string = parser.parse_string().unwrap();
         assert_eq!(string.0, ARRAY);
+
+        assert!(parser.parse_int().is_none());
     }
 }

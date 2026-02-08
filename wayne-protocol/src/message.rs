@@ -112,23 +112,19 @@ impl<'a> DataParser<'a> {
         // first extract the byte count
         let array_size = *self.data.get(0)? as usize;
 
-        // convert the u32 slice to a u8 slice
-        // the array size counts the number of bytes in the array
+        // convert the u32 slice to a u8 slice with possible array contents
+        // we use u8 here since the array_size value represents the byte count
         let all_bytes: &[u8] = cast_slice(&self.data[1..]);
 
-        // ensure there are enough bytes left in the slice
-        if all_bytes.len() < array_size {
-            return None;
-        }
-
         // then subslice the array to get the exact contents out
-        let array_bytes = &all_bytes[0..array_size];
+        let array_bytes = all_bytes.get(..array_size)?;
 
         // ceiling divide the byte count by 4
-        // this finds how many u32 values were used
+        // this finds how many u32 values are used by the array (including padding)
         // also add 1 to the value, since the count itself was used
-        // then swap out the data slice with the shortened one
         let consume_count = array_size.div_ceil(4) + 1;
+
+        // then swap out the data slice with the shortened one
         self.data = &self.data[consume_count..];
 
         // finally, return the calculated array bytes
@@ -209,6 +205,19 @@ mod tests {
         assert_eq!(array, ARRAY);
 
         assert!(parser.parse_int().is_none());
+    }
+
+    #[test]
+    fn fail_parse_array() {
+        const DATA: &[u32] = &[
+            // set the length to 5
+            5,
+            // but only include 4 bytes
+            u32::from_ne_bytes([1, 2, 3, 4]),
+        ];
+
+        let mut parser = parser(DATA);
+        assert!(parser.parse_array().is_none());
     }
 
     #[test]

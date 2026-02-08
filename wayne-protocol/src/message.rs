@@ -1,6 +1,25 @@
+use std::{os::fd::OwnedFd, process::Output};
+
 use bytemuck::cast_slice;
 
 use crate::types::{Fixed, NewId, ObjectId, RawString};
+
+/// A wayland protocol message
+pub trait Message {
+    /// The builder for the protocol message
+    type Builder: Builder<Output = Self>;
+}
+
+/// A builder trait for constructing [`Message`] types.
+///
+/// Parsing happens in two stages since the file descriptors get passed separately from other args.
+/// - `parse` - constructs the initial builder with the data from the message.
+/// - `complete` - provides the builder with access to the store for file descriptors.
+pub trait Builder: Sized {
+    type Output: Message<Builder = Self>;
+    fn parse(data: DataParser) -> Option<Self>;
+    fn complete(self, fds: impl Iterator<Item = OwnedFd>) -> Option<Output>;
+}
 
 /// An untyped wayland message.
 ///
@@ -12,25 +31,25 @@ use crate::types::{Fixed, NewId, ObjectId, RawString};
 /// There is no prefix that describes the type, but it is inferred implicitly from the xml specification.
 /// The payload contents can be deduced by referencing the interface associated with the object id,
 /// and determining the event/request type based on the opcode.
-pub struct Message<'a> {
+pub struct RawMessage<'a> {
     pub id: ObjectId,
     pub opcode: u16,
     pub data: &'a [u32],
 }
 
-impl<'a> Message<'a> {
-    /// Constructs a [`MessageParser`] out of the contained `data` slice
-    pub fn parser(&self) -> MessageParser<'a> {
-        MessageParser { data: self.data }
+impl<'a> RawMessage<'a> {
+    /// Parses message data into the protocol message builder
+    pub fn parse<T: Message>(&self) -> Option<T::Builder> {
+        T::Builder::parse(DataParser { data: self.data })
     }
 }
 
-/// A parser for decoding arguments out of a [`Message`] data payload
-pub struct MessageParser<'a> {
+/// A parser for args in a [`Message`] data payload
+pub struct DataParser<'a> {
     data: &'a [u32],
 }
 
-impl<'a> MessageParser<'a> {
+impl<'a> DataParser<'a> {
     /// Parses a [`u32`] from the data payload.
     ///
     /// Returns `None` if there were not enough bytes.
@@ -107,7 +126,7 @@ impl<'a> MessageParser<'a> {
 
         // ceiling divide the byte count by 4
         // this finds how many u32 values were used
-        // also add 1 to the value, since the count iself was used
+        // also add 1 to the value, since the count itself was used
         // then swap out the data slice with the shortened one
         let consume_count = array_size.div_ceil(4) + 1;
         self.data = &self.data[consume_count..];
@@ -121,18 +140,14 @@ impl<'a> MessageParser<'a> {
 mod tests {
     use super::*;
 
-    const fn mock_message<'a>(data: &'a [u32]) -> Message<'a> {
-        Message {
-            id: ObjectId(0),
-            opcode: 0,
-            data,
-        }
+    const fn parser<'a>(data: &'a [u32]) -> DataParser<'a> {
+        DataParser { data }
     }
 
     #[test]
     fn parse_uint() {
         const VALUE: u32 = 120;
-        let mut parser = mock_message(&[VALUE]).parser();
+        let mut parser = parser(&[VALUE]);
         let value = parser.parse_uint().unwrap();
         assert_eq!(value, VALUE);
 
@@ -142,7 +157,7 @@ mod tests {
     #[test]
     fn parse_int() {
         const VALUE: i32 = -120;
-        let mut parser = mock_message(&[VALUE as u32]).parser();
+        let mut parser = parser(&[VALUE as u32]);
         let value = parser.parse_int().unwrap();
         assert_eq!(value, VALUE);
 
@@ -152,7 +167,7 @@ mod tests {
     #[test]
     fn parse_fixed() {
         const VALUE: i32 = -120;
-        let mut parser = mock_message(&[VALUE as u32]).parser();
+        let mut parser = parser(&[VALUE as u32]);
         let value = parser.parse_fixed().unwrap();
         assert_eq!(value.0, VALUE);
 
@@ -162,7 +177,7 @@ mod tests {
     #[test]
     fn parse_object_id() {
         const VALUE: u32 = 120;
-        let mut parser = mock_message(&[VALUE]).parser();
+        let mut parser = parser(&[VALUE]);
         let value = parser.parse_object_id().unwrap();
         assert_eq!(value.0, VALUE);
 
@@ -172,7 +187,7 @@ mod tests {
     #[test]
     fn parse_new_id() {
         const VALUE: u32 = 120;
-        let mut parser = mock_message(&[VALUE]).parser();
+        let mut parser = parser(&[VALUE]);
         let value = parser.parse_new_id().unwrap();
         assert_eq!(value.0, VALUE);
 
@@ -189,7 +204,7 @@ mod tests {
             u32::from_ne_bytes([5, 0, 0, 0]),
         ];
 
-        let mut parser = mock_message(DATA).parser();
+        let mut parser = parser(DATA);
         let array = parser.parse_array().unwrap();
         assert_eq!(array, ARRAY);
 
@@ -206,7 +221,7 @@ mod tests {
             u32::from_ne_bytes([1, 0, 0, 0]),
         ];
 
-        let mut parser = mock_message(DATA).parser();
+        let mut parser = parser(DATA);
         let string = parser.parse_string().unwrap();
         assert_eq!(string.0, ARRAY);
 

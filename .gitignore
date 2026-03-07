@@ -1,5 +1,13 @@
-# ignore vscode settings
-/.vscode
-
-# ignore rust generated files
+# rust
 /target
+
+# devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

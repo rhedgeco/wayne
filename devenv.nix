@@ -1,6 +1,9 @@
 {pkgs, ...}: {
   # https://devenv.sh/packages/
-  packages = [pkgs.git];
+  packages = with pkgs; [
+    git
+    tombi
+  ];
 
   # https://devenv.sh/languages/
   languages.rust = {

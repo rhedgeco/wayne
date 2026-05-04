@@ -56,12 +56,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn id_comparison() {
+    fn id_equality() {
         const VALUE: u32 = 10;
         let object_id = ObjectId(VALUE);
         let new_id = NewId(VALUE);
         assert_eq!(object_id, new_id);
         assert_eq!(new_id, object_id);
+    }
+
+    #[test]
+    fn id_inequality() {
+        let object_id = ObjectId(1);
+        let new_id = NewId(2);
+        assert_ne!(object_id, new_id);
+        assert_ne!(new_id, object_id);
     }
 
     #[test]
@@ -77,6 +85,8 @@ mod tests {
         // fractional numbers
         assert_eq!(Fixed(1).to_f32(), 1.0 / 256.0);
         assert_eq!(Fixed(-128).to_f32(), -0.5);
+        assert_eq!(Fixed(1).to_f64(), 1.0 / 256.0);
+        assert_eq!(Fixed(-128).to_f64(), -0.5);
     }
 
     #[test]
@@ -86,6 +96,9 @@ mod tests {
 
         let non_null_string = RawString(&[1]);
         assert!(!non_null_string.is_null());
+
+        let empty_string = RawString(&[]);
+        assert!(!empty_string.is_null_terminated());
     }
 
     #[test]
@@ -95,6 +108,9 @@ mod tests {
 
         let no_interior_nulls = RawString(&[1, 2, 3, 0]);
         assert!(!no_interior_nulls.has_interior_nulls());
+
+        let empty = RawString(&[]);
+        assert!(!empty.has_interior_nulls());
     }
 
     #[test]

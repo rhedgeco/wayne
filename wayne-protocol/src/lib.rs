@@ -1,4 +1,4 @@
-pub mod message;
+pub mod parser;
 pub mod types;
 
-pub use message::Message;
+pub use parser::Parser;

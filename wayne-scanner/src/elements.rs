@@ -14,6 +14,7 @@ pub struct Description {
 }
 
 impl Description {
+    /// Creates a new empty description.
     pub fn new() -> Self {
         Self {
             summary: None,
@@ -21,11 +22,13 @@ impl Description {
         }
     }
 
+    /// Builder function that sets the summary.
     pub fn with_summary(mut self, summary: impl Into<String>) -> Self {
         self.summary = Some(summary.into());
         self
     }
 
+    /// Builder function that sets the body text.
     pub fn with_body(mut self, body: impl Into<String>) -> Self {
         self.body = Some(body.into());
         self
@@ -45,6 +48,7 @@ pub struct Protocol {
 }
 
 impl Protocol {
+    /// Creates a new protocol with the given name.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -54,16 +58,19 @@ impl Protocol {
         }
     }
 
+    /// Builder function that sets the copyright notice.
     pub fn with_copyright(mut self, copyright: impl Into<String>) -> Self {
         self.copyright = Some(copyright.into());
         self
     }
 
+    /// Builder function that sets the description.
     pub fn with_description(mut self, description: Description) -> Self {
         self.description = Some(description);
         self
     }
 
+    /// Builder function that adds an interface.
     pub fn with_interface(mut self, interface: Interface) -> Self {
         self.interfaces.push(interface);
         self
@@ -91,6 +98,7 @@ pub struct Interface {
 }
 
 impl Interface {
+    /// Creates a new interface with the given name at version 1.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -103,31 +111,37 @@ impl Interface {
         }
     }
 
+    /// Builder function that sets the version.
     pub fn version(mut self, version: u32) -> Self {
         self.version = version;
         self
     }
 
+    /// Builder function that marks the interface as frozen.
     pub fn frozen(mut self) -> Self {
         self.frozen = true;
         self
     }
 
+    /// Builder function that sets the description.
     pub fn with_description(mut self, description: Description) -> Self {
         self.description = Some(description);
         self
     }
 
+    /// Builder function that adds a request.
     pub fn with_request(mut self, request: Request) -> Self {
         self.requests.push(request);
         self
     }
 
+    /// Builder function that adds an event.
     pub fn with_event(mut self, event: Event) -> Self {
         self.events.push(event);
         self
     }
 
+    /// Builder function that adds an enum.
     pub fn with_enum(mut self, variant: Enum) -> Self {
         self.enums.push(variant);
         self
@@ -159,6 +173,7 @@ pub struct Request {
 }
 
 impl Request {
+    /// Creates a new request with the given name.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -170,26 +185,31 @@ impl Request {
         }
     }
 
+    /// Builder function that adds an argument.
     pub fn with_arg(mut self, arg: Arg) -> Self {
         self.args.push(arg);
         self
     }
 
+    /// Builder function that marks the request as a destructor.
     pub fn destructor(mut self) -> Self {
         self.destructor = true;
         self
     }
 
+    /// Builder function that sets the version the request was added in.
     pub fn since(mut self, since: u32) -> Self {
         self.since = Some(since);
         self
     }
 
+    /// Builder function that sets the version the request was deprecated in.
     pub fn deprecated_since(mut self, deprecated_since: u32) -> Self {
         self.deprecated_since = Some(deprecated_since);
         self
     }
 
+    /// Builder function that sets the description.
     pub fn with_description(mut self, description: Description) -> Self {
         self.description = Some(description);
         self
@@ -219,6 +239,7 @@ pub struct Event {
 }
 
 impl Event {
+    /// Creates a new event with the given name.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -230,26 +251,31 @@ impl Event {
         }
     }
 
+    /// Builder function that adds an argument.
     pub fn with_arg(mut self, arg: Arg) -> Self {
         self.args.push(arg);
         self
     }
 
+    /// Builder function that marks the event as a destructor.
     pub fn destructor(mut self) -> Self {
         self.destructor = true;
         self
     }
 
+    /// Builder function that sets the version the event was added in.
     pub fn since(mut self, since: u32) -> Self {
         self.since = Some(since);
         self
     }
 
+    /// Builder function that sets the version the event was deprecated in.
     pub fn deprecated_since(mut self, deprecated_since: u32) -> Self {
         self.deprecated_since = Some(deprecated_since);
         self
     }
 
+    /// Builder function that sets the description.
     pub fn with_description(mut self, description: Description) -> Self {
         self.description = Some(description);
         self
@@ -280,6 +306,7 @@ pub struct Arg {
 }
 
 impl Arg {
+    /// Creates a new argument with the given name and type.
     pub fn new(name: impl Into<String>, ty: ArgType) -> Self {
         Self {
             name: name.into(),
@@ -292,26 +319,31 @@ impl Arg {
         }
     }
 
+    /// Builder function that sets the interface name.
     pub fn with_interface(mut self, interface: impl Into<String>) -> Self {
         self.interface = Some(interface.into());
         self
     }
 
+    /// Builder function that sets the enum the value comes from.
     pub fn with_enumeration(mut self, enumeration: impl Into<String>) -> Self {
         self.enumeration = Some(enumeration.into());
         self
     }
 
+    /// Builder function that allows the argument value to be null.
     pub fn allow_null(mut self) -> Self {
         self.allow_null = true;
         self
     }
 
+    /// Builder function that sets the summary.
     pub fn with_summary(mut self, summary: impl Into<String>) -> Self {
         self.summary = Some(summary.into());
         self
     }
 
+    /// Builder function that sets the description.
     pub fn with_description(mut self, description: Description) -> Self {
         self.description = Some(description);
         self
@@ -358,6 +390,7 @@ pub struct Enum {
 }
 
 impl Enum {
+    /// Creates a new enumeration with the given name.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -368,21 +401,25 @@ impl Enum {
         }
     }
 
+    /// Builder function that marks the enumeration as a bitfield.
     pub fn bitfield(mut self) -> Self {
         self.bitfield = true;
         self
     }
 
+    /// Builder function that sets the version the enumeration was added in.
     pub fn since(mut self, since: u32) -> Self {
         self.since = Some(since);
         self
     }
 
+    /// Builder function that sets the description.
     pub fn with_description(mut self, description: Description) -> Self {
         self.description = Some(description);
         self
     }
 
+    /// Builder function that adds an entry.
     pub fn with_entry(mut self, entry: Entry) -> Self {
         self.entries.push(entry);
         self
@@ -409,6 +446,7 @@ pub struct Entry {
 }
 
 impl Entry {
+    /// Creates a new entry with the given name and value.
     pub fn new(name: impl Into<String>, value: u32) -> Self {
         Self {
             name: name.into(),
@@ -420,21 +458,25 @@ impl Entry {
         }
     }
 
+    /// Builder function that sets the summary.
     pub fn with_summary(mut self, summary: impl Into<String>) -> Self {
         self.summary = Some(summary.into());
         self
     }
 
+    /// Builder function that sets the version the entry was added in.
     pub fn since(mut self, since: u32) -> Self {
         self.since = Some(since);
         self
     }
 
+    /// Builder function that sets the version the entry was deprecated in.
     pub fn deprecated_since(mut self, deprecated_since: u32) -> Self {
         self.deprecated_since = Some(deprecated_since);
         self
     }
 
+    /// Builder function that sets the description.
     pub fn with_description(mut self, description: Description) -> Self {
         self.description = Some(description);
         self

@@ -1,8 +1,15 @@
+//! XML Elements following the https://wayland.freedesktop.org specification
+//!
+//! Documentation for each struct and field is adapted directly from the spec definition.
+//! Some parts have been removed or modified for brevity and clarity of the rust code.
+//! See the spec for more information on the xml specifics.
+
 /// Human-readable documentation for an element.
 pub struct Description {
-    /// The short one-line `summary` attribute.
+    /// A short (should be half a line at most) description of the documented element.
     pub summary: Option<String>,
     /// The free-form body text.
+    /// May contain formatted text, including paragraphs and bulleted lists.
     pub body: Option<String>,
 }
 
@@ -25,10 +32,15 @@ impl Description {
     }
 }
 
+/// The root element in a Wayland protocol XML file.
 pub struct Protocol {
+    /// The name of the protocol (a.k.a protocol extension).
     pub name: String,
+    /// Copyright and license notices for the protocol.
     pub copyright: Option<String>,
+    /// Documents the intended purpose of the protocol.
     pub description: Option<Description>,
+    /// The interfaces that make up the protocol.
     pub interfaces: Vec<Interface>,
 }
 
@@ -58,14 +70,23 @@ impl Protocol {
     }
 }
 
-/// An interface: a named collection of requests, events, and enums.
+/// A collection of the requests and events that form the interface, along with any enumerations.
+/// These all belong to the namespace of the interface.
 pub struct Interface {
+    /// The name of the interface. Must be unique in the protocol.
     pub name: String,
+    /// The interface's latest version number.
+    /// An interface defines all versions from 1 to this value inclusive.
     pub version: u32,
+    /// The interface is frozen and forever stuck at version 1.
     pub frozen: bool,
+    /// Describes the purpose and the general usage of the interface.
     pub description: Option<Description>,
+    /// The requests defined by the interface (messages from client to server).
     pub requests: Vec<Request>,
+    /// The events defined by the interface (messages from server to client).
     pub events: Vec<Event>,
+    /// The enumerations defined by the interface.
     pub enums: Vec<Enum>,
 }
 
@@ -113,13 +134,27 @@ impl Interface {
     }
 }
 
-/// A request: a message sent from a client to the server.
+/// A request: a message from a client to a server.
+/// Requests are always associated with a specific protocol object.
+///
+/// Requests are automatically assigned opcodes in the order they appear inside the interface element.
 pub struct Request {
+    /// The name of the request.
+    /// Must be unique within all requests and events in the containing interface.
     pub name: String,
+    /// The request's arguments. The order defines the order on the wire.
+    /// All declared arguments are mandatory.
     pub args: Vec<Arg>,
+    /// The request is a destructor: it destroys the protocol object it is sent
+    /// on.
     pub destructor: bool,
+    /// The request was added in this interface version.
+    /// If absent, version 1 is assumed.
     pub since: Option<u32>,
+    /// The request was deprecated in this interface version and above.
+    /// Must be greater than the value of `since`.
     pub deprecated_since: Option<u32>,
+    /// Documents the request.
     pub description: Option<Description>,
 }
 
@@ -161,13 +196,25 @@ impl Request {
     }
 }
 
-/// An event: a message sent from the server to a client.
+/// An event: a message from a server to a client.
+/// Events are always associated with a specific protocol object.
+///
+/// Events are automatically assigned opcodes in the order they appear inside the interface element.
 pub struct Event {
+    /// The name of the event.
+    /// Must be unique within all requests and events in the containing interface.
     pub name: String,
+    /// The event's arguments. The order defines the order on the wire.
+    /// All declared arguments are mandatory.
     pub args: Vec<Arg>,
+    /// The event is a destructor: it destroys the protocol object it is sent on.
     pub destructor: bool,
+    /// The event was added in this interface version.
+    /// If absent, version 1 is assumed.
     pub since: Option<u32>,
+    /// The event was deprecated in this interface version and above.
     pub deprecated_since: Option<u32>,
+    /// Documents the event.
     pub description: Option<Description>,
 }
 
@@ -209,14 +256,26 @@ impl Event {
     }
 }
 
-/// A single argument of a request or event.
+/// One argument of a request or an event. All arguments are typed.
 pub struct Arg {
+    /// The name of the argument.
+    /// Must be unique within all the arguments of the parent element.
     pub name: String,
+    /// The type of the argument datum.
     pub ty: ArgType,
+    /// If given, the name of the interface the existing or new object must have.
+    /// Only used when `ty` is `Object` or `NewId`.
     pub interface: Option<String>,
+    /// If specified, the argument value should come from the named enum.
+    /// The name may be qualified with an interface name using a period.
     pub enumeration: Option<String>,
+    /// Whether the argument value can be null on send.
+    /// Only used when `ty` is `String` or `Object`.
     pub allow_null: bool,
+    /// A short (half a line at most) description.
+    /// Should usually not be used if a description is used.
     pub summary: Option<String>,
+    /// Documents the argument.
     pub description: Option<Description>,
 }
 
@@ -259,7 +318,7 @@ impl Arg {
     }
 }
 
-/// The type of a request or event argument.
+/// The type of an argument datum.
 pub enum ArgType {
     /// 32-bit signed integer.
     Int,
@@ -267,24 +326,34 @@ pub enum ArgType {
     Uint,
     /// Signed 24.8-bit fixed-point value.
     Fixed,
-    /// UTF-8 encoded, NUL-terminated string.
+    /// UTF-8 encoded string value, NUL byte terminated.
     String,
-    /// Reference to an existing object.
+    /// Reference to an existing protocol object.
     Object,
-    /// Creates a new object.
+    /// Creates a new protocol object.
+    /// A message may have at most one `new_id` argument.
     NewId,
     /// A byte array of arbitrary data.
     Array,
-    /// A file descriptor.
+    /// A file descriptor. Must be open and valid on send.
     Fd,
 }
 
-/// An enumeration of named integer constants.
+/// An enumeration of integer values.
+/// Enumerations give names to arbitrary integer constants.
 pub struct Enum {
+    /// The name of the enumeration.
+    /// Must be unique within all enumerations in the containing interface.
+    /// Used as the namespace for its entries.
     pub name: String,
+    /// Whether this enumeration is a bitfield.
     pub bitfield: bool,
+    /// The enumeration was added in this interface version.
+    /// If absent, version 1 is assumed.
     pub since: Option<u32>,
+    /// Describes the enumeration.
     pub description: Option<Description>,
+    /// The values that belong to the enumeration.
     pub entries: Vec<Entry>,
 }
 
@@ -320,13 +389,22 @@ impl Enum {
     }
 }
 
-/// A named constant within an [`Enum`].
+/// A name for an integer constant, part of the set of values of the containing enumeration.
 pub struct Entry {
+    /// The name of a value in an enumeration.
+    /// Must be unique within all entries in the containing enum.
     pub name: String,
+    /// The integer value for this entry.
     pub value: u32,
+    /// A short (half a line at most) description.
+    /// Should usually not be used if a description is used.
     pub summary: Option<String>,
+    /// The value was added in this interface version.
+    /// If absent, version 1 is assumed.
     pub since: Option<u32>,
+    /// The value was removed in this interface version and above.
     pub deprecated_since: Option<u32>,
+    /// Documents the entry.
     pub description: Option<Description>,
 }
 

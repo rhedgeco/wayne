@@ -1,16 +1,18 @@
 [workspace]
 resolver = "3"
 members = [
-    "wayne",
-    "wayne-macros",
-    "wayne-protocol",
-    "wayne-server",
-    "wayne-stream",
+  "wayne",
+  "wayne-macros",
+  "wayne-protocol",
+  "wayne-scanner",
+  "wayne-server",
+  "wayne-stream",
 ]
 
 [workspace.dependencies]
 wayne = { path = "wayne" }
 wayne-macros = { path = "wayne-macros" }
 wayne-protocol = { path = "wayne-protocol" }
+wayne-scanner = { path = "wayne-scanner" }
 wayne-server = { path = "wayne-server" }
 wayne-stream = { path = "wayne-stream" }
